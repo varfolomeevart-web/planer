@@ -47,12 +47,12 @@ export function pointsBBox(pts: Pt[], pad = 0): BBox {
   return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
 }
 
-export function objectCorners(o: PlannerObject): Pt[] {
-  const rad = (o.angle * Math.PI) / 180
+export function rectCorners(r: { x: number; y: number; w: number; h: number; angle: number }): Pt[] {
+  const rad = (r.angle * Math.PI) / 180
   const cos = Math.cos(rad)
   const sin = Math.sin(rad)
-  const hw = o.w / 2
-  const hh = o.h / 2
+  const hw = r.w / 2
+  const hh = r.h / 2
   const locals: Pt[] = [
     { x: -hw, y: -hh },
     { x: hw, y: -hh },
@@ -60,9 +60,13 @@ export function objectCorners(o: PlannerObject): Pt[] {
     { x: -hw, y: hh },
   ]
   return locals.map((p) => ({
-    x: o.x + p.x * cos - p.y * sin,
-    y: o.y + p.x * sin + p.y * cos,
+    x: r.x + p.x * cos - p.y * sin,
+    y: r.y + p.x * sin + p.y * cos,
   }))
+}
+
+export function objectCorners(o: PlannerObject): Pt[] {
+  return rectCorners(o)
 }
 
 export function objectsBBox(objects: PlannerObject[], pad = 0): BBox {
@@ -109,14 +113,19 @@ export function screenToPlan(px: number, py: number, view: { scale: number; ox: 
   return { x: (px - view.ox) / view.scale, y: (py - view.oy) / view.scale }
 }
 
-/** проверка попадания точки в объект с учётом поворота */
-export function pointInObject(o: PlannerObject, p: Pt): boolean {
-  const rad = (-o.angle * Math.PI) / 180
-  const dx = p.x - o.x
-  const dy = p.y - o.y
+/** проверка попадания точки в повернутый прямоугольник {x,y — центр} */
+export function pointInRect(r: { x: number; y: number; w: number; h: number; angle: number }, p: Pt): boolean {
+  const rad = (-r.angle * Math.PI) / 180
+  const dx = p.x - r.x
+  const dy = p.y - r.y
   const lx = dx * Math.cos(rad) - dy * Math.sin(rad)
   const ly = dx * Math.sin(rad) + dy * Math.cos(rad)
-  return Math.abs(lx) <= o.w / 2 && Math.abs(ly) <= o.h / 2
+  return Math.abs(lx) <= r.w / 2 && Math.abs(ly) <= r.h / 2
+}
+
+/** проверка попадания точки в объект с учётом поворота */
+export function pointInObject(o: PlannerObject, p: Pt): boolean {
+  return pointInRect(o, p)
 }
 
 /** позиция поворотной ручки (в координатах плана, см) */

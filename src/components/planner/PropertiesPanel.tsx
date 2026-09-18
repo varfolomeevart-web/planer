@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { PlannerDoc, PlannerObject } from '@/lib/planner/types'
+import type { PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
 import { GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
 import { fmtLen } from '@/lib/planner/draw'
@@ -9,18 +9,26 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { Copy, Trash2, RotateCcw, RotateCw, Eraser } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
+import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
   doc: PlannerDoc
   showGrid: boolean
   selected: PlannerObject | null
+  underlay: Underlay | null
+  underlaySelected: boolean
   onUpdateObject: (id: string, patch: Partial<PlannerObject>) => void
   onCommit: () => void
   onDeleteObject: (id: string) => void
   onDuplicateObject: (id: string) => void
   onClearRoom: () => void
+  onSelectUnderlay: () => void
+  onUpdateUnderlay: (patch: Partial<Underlay>) => void
+  onRemoveUnderlay: () => void
+  onFitUnderlay: () => void
+  onReplaceUnderlay: () => void
   onGridStepChange: (step: number) => void
   onToggleGrid: (v: boolean) => void
 }
@@ -89,11 +97,18 @@ export function PropertiesPanel({
   doc,
   showGrid,
   selected,
+  underlay,
+  underlaySelected,
   onUpdateObject,
   onCommit,
   onDeleteObject,
   onDuplicateObject,
   onClearRoom,
+  onSelectUnderlay,
+  onUpdateUnderlay,
+  onRemoveUnderlay,
+  onFitUnderlay,
+  onReplaceUnderlay,
   onGridStepChange,
   onToggleGrid,
 }: Props) {
@@ -227,6 +242,129 @@ export function PropertiesPanel({
             Кликните по объекту на плане, чтобы изменить его размеры, позицию, угол поворота и цвет. Клавиши: <b>R</b> — поворот,
             <b> Ctrl+D</b> — копия, <b>Del</b> — удалить.
           </p>
+        )}
+      </div>
+
+      {/* Подложка */}
+      <div className="border-b border-[#EAE2D5] p-4">
+        <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">Подложка</h3>
+        {!underlay ? (
+          <div className="space-y-2">
+            <p className="text-xs leading-relaxed text-[#8B7D6B]">
+              Загрузите скан или фото плана — поверх него можно обвести стены и расставить мебель по реальным размерам.
+            </p>
+            <Button variant="outline" className="h-8 w-full border-[#E4DAC8] bg-white text-xs hover:bg-[#F7F1E6]" onClick={onReplaceUnderlay}>
+              <ImagePlus className="mr-1.5 h-3.5 w-3.5" /> Загрузить изображение
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="underlay-visible" className="text-sm text-[#3D3428]">
+                Показывать
+              </Label>
+              <Switch
+                id="underlay-visible"
+                checked={underlay.visible}
+                onCheckedChange={(v) => {
+                  onCommit()
+                  onUpdateUnderlay({ visible: v })
+                }}
+                className="data-[state=checked]:bg-[#E8730C]"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <Label className="text-[11px] font-semibold text-[#6B5D4F]">Прозрачность</Label>
+                <span className="text-[10px] font-semibold text-[#8B7D6B] tabular-nums">{Math.round(underlay.opacity * 100)}%</span>
+              </div>
+              <div onPointerDownCapture={onCommit}>
+                <Slider
+                  value={[Math.round(underlay.opacity * 100)]}
+                  min={5}
+                  max={100}
+                  step={5}
+                  onValueChange={([v]) => onUpdateUnderlay({ opacity: v / 100 })}
+                  className="cursor-pointer [&_[data-slot=slider-range]]:bg-[#E8730C] [&_[data-slot=slider-thumb]]:border-[#E8730C]"
+                />
+              </div>
+            </div>
+
+            {underlaySelected ? (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="un-x" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      X (центр)
+                    </Label>
+                    <NumberField id="un-x" value={underlay.x} onCommit={onCommit} onChange={(v) => onUpdateUnderlay({ x: v })} suffix="см" />
+                  </div>
+                  <div>
+                    <Label htmlFor="un-y" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      Y (центр)
+                    </Label>
+                    <NumberField id="un-y" value={underlay.y} onCommit={onCommit} onChange={(v) => onUpdateUnderlay({ y: v })} suffix="см" />
+                  </div>
+                  <div>
+                    <Label htmlFor="un-w" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      Ширина
+                    </Label>
+                    <NumberField
+                      id="un-w"
+                      value={underlay.w}
+                      min={20}
+                      max={100000}
+                      onCommit={onCommit}
+                      onChange={(v) => onUpdateUnderlay({ w: v, h: Math.round((v * underlay.imgH) / Math.max(1, underlay.imgW)) })}
+                      suffix="см"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="un-h" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      Высота
+                    </Label>
+                    <NumberField
+                      id="un-h"
+                      value={underlay.h}
+                      min={20}
+                      max={100000}
+                      onCommit={onCommit}
+                      onChange={(v) => onUpdateUnderlay({ h: v, w: Math.round((v * underlay.imgW) / Math.max(1, underlay.imgH)) })}
+                      suffix="см"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="un-angle" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                    Поворот
+                  </Label>
+                  <NumberField id="un-angle" value={underlay.angle} min={-180} max={180} step={1} onCommit={onCommit} onChange={(v) => onUpdateUnderlay({ angle: v })} suffix="°" />
+                </div>
+                <Button variant="outline" className="h-8 w-full border-[#E4DAC8] text-xs" onClick={onFitUnderlay}>
+                  <Maximize2 className="mr-1.5 h-3.5 w-3.5" /> Вписать в комнату
+                </Button>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed text-[#8B7D6B]">
+                  Кликните по подложке на плане, чтобы передвинуть её и задать точный масштаб, — или нажмите «Настроить».
+                </p>
+                <Button variant="outline" className="h-8 w-full border-[#E4DAC8] bg-white text-xs hover:bg-[#F7F1E6]" onClick={onSelectUnderlay}>
+                  Настроить размер и позицию
+                </Button>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="h-8 flex-1 border-[#E4DAC8] text-xs" onClick={onReplaceUnderlay}>
+                <Replace className="mr-1 h-3.5 w-3.5" /> Заменить
+              </Button>
+              <Button variant="destructive" className="h-8 flex-1 text-xs" onClick={onRemoveUnderlay}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" /> Удалить
+              </Button>
+            </div>
+          </div>
         )}
       </div>
 

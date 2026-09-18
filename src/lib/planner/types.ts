@@ -18,9 +18,30 @@ export interface PlannerObject {
   color: string
 }
 
+/** Изображение-подложка (скан/фото плана) для обводки поверх него */
+export interface Underlay {
+  /** data URL изображения */
+  src: string
+  /** исходные размеры картинки в пикселях (для пропорций) */
+  imgW: number
+  imgH: number
+  /** координаты центра на плане, см */
+  x: number
+  y: number
+  /** размер на плане, см */
+  w: number
+  h: number
+  /** поворот вокруг центра, градусы (по часовой) */
+  angle: number
+  /** прозрачность 0..1 */
+  opacity: number
+  visible: boolean
+}
+
 export interface PlannerDoc {
   room: Pt[] | null
   objects: PlannerObject[]
+  underlay: Underlay | null
   gridStep: number
 }
 
@@ -34,6 +55,7 @@ export interface View {
 export const DEFAULT_DOC: PlannerDoc = {
   room: null,
   objects: [],
+  underlay: null,
   gridStep: 25,
 }
 

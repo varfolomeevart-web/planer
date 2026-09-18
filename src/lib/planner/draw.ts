@@ -1,4 +1,4 @@
-import type { PlannerDoc, PlannerObject, Pt } from './types'
+import type { PlannerDoc, PlannerObject, Pt, Underlay } from './types'
 import { rotateHandlePos } from './geometry'
 
 export const COLORS = {
@@ -22,6 +22,45 @@ export interface DrawUI {
   ghost: PlannerObject | null
   draggingVertex: number | null
   showVertexHandles: boolean
+  /** выделена ли подложка */
+  underlaySelected: boolean
+  /** вызывается, когда картинка подложки догрузилась — для перерисовки */
+  onImageLoad?: () => void
+}
+
+// ---------- кэш изображений подложки ----------
+
+const underlayImgCache = new Map<string, HTMLImageElement>()
+
+function getUnderlayImage(src: string, onLoad?: () => void): HTMLImageElement | null {
+  let img = underlayImgCache.get(src)
+  if (!img) {
+    img = new Image()
+    img.onload = () => onLoad?.()
+    img.src = src
+    underlayImgCache.set(src, img)
+    if (underlayImgCache.size > 5) {
+      const oldest = underlayImgCache.keys().next().value
+      if (oldest !== undefined) underlayImgCache.delete(oldest)
+    }
+    return null
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null
+}
+
+/** Гарантирует, что картинка подложки загружена (для экспорта PNG) */
+export function preloadUnderlayImage(src: string): Promise<void> {
+  const cached = underlayImgCache.get(src)
+  if (cached && cached.complete && cached.naturalWidth > 0) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      underlayImgCache.set(src, img)
+      resolve()
+    }
+    img.onerror = () => reject(new Error('underlay load failed'))
+    img.src = src
+  })
 }
 
 export function fmtLen(cm: number): string {
@@ -447,6 +486,55 @@ function drawScaleBar(ctx: CanvasRenderingContext2D, cssW: number, cssH: number,
   ctx.restore()
 }
 
+function drawUnderlay(
+  ctx: CanvasRenderingContext2D,
+  u: Underlay,
+  view: { scale: number; ox: number; oy: number },
+  ui: DrawUI,
+) {
+  const wPx = u.w * view.scale
+  const hPx = u.h * view.scale
+  const cx = u.x * view.scale + view.ox
+  const cy = u.y * view.scale + view.oy
+  const img = getUnderlayImage(u.src, ui.onImageLoad)
+  if (img) {
+    ctx.save()
+    ctx.globalAlpha = Math.max(0.05, Math.min(1, u.opacity))
+    ctx.translate(cx, cy)
+    ctx.rotate((u.angle * Math.PI) / 180)
+    ctx.drawImage(img, -wPx / 2, -hPx / 2, wPx, hPx)
+    ctx.restore()
+  }
+  if (ui.underlaySelected) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate((u.angle * Math.PI) / 180)
+    ctx.strokeStyle = COLORS.accentDark
+    ctx.lineWidth = 1.6
+    ctx.setLineDash([8, 6])
+    ctx.strokeRect(-wPx / 2 - 4, -hPx / 2 - 4, wPx + 8, hPx + 8)
+    ctx.setLineDash([])
+    // угловые маркеры
+    const hw = wPx / 2 + 4
+    const hh = hPx / 2 + 4
+    for (const [sx, sy] of [
+      [-hw, -hh],
+      [hw, -hh],
+      [hw, hh],
+      [-hw, hh],
+    ]) {
+      ctx.beginPath()
+      ctx.arc(sx, sy, 4, 0, Math.PI * 2)
+      ctx.fillStyle = COLORS.accent
+      ctx.fill()
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = '#FFFFFF'
+      ctx.stroke()
+    }
+    ctx.restore()
+  }
+}
+
 /** Полная отрисовка сцены. Ожидается, что ctx уже масштабирован под devicePixelRatio. */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -459,11 +547,12 @@ export function drawScene(
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, cssW, cssH)
 
-  if (ui.showGrid) drawGrid(ctx, cssW, cssH, doc, view)
+  const hasRoom = !!(doc.room && doc.room.length >= 3)
+  const hasUnderlay = !!(doc.underlay && doc.underlay.visible)
 
-  // Комната
-  if (doc.room && doc.room.length >= 3) {
-    pathPolygon(ctx, doc.room, view)
+  // Порядок слоёв при подложке: заливка комнаты → подложка → сетка → стены
+  if (hasUnderlay && hasRoom) {
+    pathPolygon(ctx, doc.room!, view)
     ctx.closePath()
     ctx.save()
     ctx.shadowColor = 'rgba(74, 64, 54, 0.12)'
@@ -471,6 +560,24 @@ export function drawScene(
     ctx.fillStyle = COLORS.roomFill
     ctx.fill()
     ctx.restore()
+  }
+
+  if (hasUnderlay && doc.underlay) drawUnderlay(ctx, doc.underlay, view, ui)
+
+  if (ui.showGrid) drawGrid(ctx, cssW, cssH, doc, view)
+
+  // Комната
+  if (hasRoom && doc.room) {
+    pathPolygon(ctx, doc.room, view)
+    ctx.closePath()
+    if (!hasUnderlay) {
+      ctx.save()
+      ctx.shadowColor = 'rgba(74, 64, 54, 0.12)'
+      ctx.shadowBlur = 16
+      ctx.fillStyle = COLORS.roomFill
+      ctx.fill()
+      ctx.restore()
+    }
     ctx.strokeStyle = COLORS.wall
     ctx.lineWidth = 5
     ctx.lineJoin = 'round'

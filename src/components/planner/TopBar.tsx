@@ -17,6 +17,7 @@ import {
   FileUp,
   FileDown,
   ImageDown,
+  ImagePlus,
   Hand,
   Maximize,
   MousePointer2,
@@ -44,6 +45,8 @@ interface Props {
   savedAt: string | null
   onNew: () => void
   onImportClick: () => void
+  onUnderlayClick: () => void
+  hasUnderlay: boolean
   onExportPNG: () => void
   onExportJSON: () => void
 }
@@ -67,6 +70,8 @@ export function TopBar({
   savedAt,
   onNew,
   onImportClick,
+  onUnderlayClick,
+  hasUnderlay,
   onExportPNG,
   onExportJSON,
 }: Props) {
@@ -130,6 +135,10 @@ export function TopBar({
           <span className="text-[11px] font-semibold text-[#5D8A4E]">{savedAt ? `Сохранено ${savedAt}` : 'Автосохранение'}</span>
         </div>
 
+        <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onUnderlayClick} title={hasUnderlay ? 'Заменить план-подложку' : 'Загрузить план-подложку (скан/фото) для обводки'}>
+          <ImagePlus className="mr-1 h-3.5 w-3.5" />
+          <span className="hidden md:inline">Подложка</span>
+        </Button>
         <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onImportClick} title="Импорт из JSON">
           <FileUp className="mr-1 h-3.5 w-3.5" />
           <span className="hidden md:inline">Импорт</span>

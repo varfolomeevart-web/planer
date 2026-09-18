@@ -1,13 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlannerDoc, PlannerObject, Pt, View } from '@/lib/planner/types'
+import type { PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
 import { DEFAULT_DOC, uid } from '@/lib/planner/types'
 import type { Preset } from '@/lib/planner/presets'
 import { getPreset } from '@/lib/planner/presets'
 import type { Tool } from '@/lib/planner/tools'
 import {
   pointInObject,
+  pointInRect,
   pointsBBox,
   objectsBBox,
   unionBBox,
@@ -16,6 +17,7 @@ import {
   snapObjectPos,
   snapValue,
 } from '@/lib/planner/geometry'
+import { computeUnderlayPlacement, fileToUnderlaySource, packDocForHistory, unpackDocFromHistory } from '@/lib/planner/underlay'
 import { drawScene } from '@/lib/planner/draw'
 import { exportJSON, exportPNG, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
 import { Catalog } from './Catalog'
@@ -33,7 +35,7 @@ const MIN_SCALE = 0.02
 const MAX_SCALE = 2
 
 interface Interaction {
-  type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex'
+  type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex' | 'underlayDrag'
   panStart?: { ox: number; oy: number; px: number; py: number }
   grabDX?: number
   grabDY?: number
@@ -50,13 +52,16 @@ export function Planner() {
   const [placePreset, setPlacePreset] = useState<Preset | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [hist, setHist] = useState({ p: 0, f: 0 })
+  const [underlaySelected, setUnderlaySelected] = useState(false)
 
   // ---------- refs ----------
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const underlayInputRef = useRef<HTMLInputElement | null>(null)
   const coordsRef = useRef<HTMLSpanElement | null>(null)
   const zoomRef = useRef<HTMLSpanElement | null>(null)
+  const drawRef = useRef<() => void>(() => {})
 
   const viewRef = useRef<View>({ scale: 0.3, ox: 250, oy: 180 })
   const sizeRef = useRef({ w: 800, h: 600 })
@@ -73,6 +78,7 @@ export function Planner() {
   const userViewRef = useRef(false)
   const loadedRef = useRef(false)
   const lastNudgeRef = useRef(0)
+  const underlaySelectedRef = useRef(false)
   const interRef = useRef<Interaction>({ type: 'none' })
   const historyRef = useRef<{ past: string[]; future: string[] }>({ past: [], future: [] })
 
@@ -82,6 +88,7 @@ export function Planner() {
   useEffect(() => void (selectedIdRef.current = selectedId), [selectedId])
   useEffect(() => void (placePresetRef.current = placePreset), [placePreset])
   useEffect(() => void (showGridRef.current = showGrid), [showGrid])
+  useEffect(() => void (underlaySelectedRef.current = underlaySelected), [underlaySelected])
 
   // ---------- базовые операции ----------
   const applyDoc = useCallback((next: PlannerDoc) => {
@@ -91,7 +98,7 @@ export function Planner() {
 
   const pushHistory = useCallback((snapshot?: PlannerDoc) => {
     const h = historyRef.current
-    h.past.push(JSON.stringify(snapshot ?? docRef.current))
+    h.past.push(packDocForHistory(snapshot ?? docRef.current))
     if (h.past.length > 60) h.past.shift()
     h.future = []
     setHist({ p: h.past.length, f: 0 })
@@ -100,18 +107,18 @@ export function Planner() {
   const undo = useCallback(() => {
     const h = historyRef.current
     if (!h.past.length) return
-    h.future.push(JSON.stringify(docRef.current))
+    h.future.push(packDocForHistory(docRef.current))
     const prev = h.past.pop() as string
-    applyDoc(JSON.parse(prev))
+    applyDoc(unpackDocFromHistory(prev))
     setHist({ p: h.past.length, f: h.future.length })
   }, [applyDoc])
 
   const redo = useCallback(() => {
     const h = historyRef.current
     if (!h.future.length) return
-    h.past.push(JSON.stringify(docRef.current))
+    h.past.push(packDocForHistory(docRef.current))
     const next = h.future.pop() as string
-    applyDoc(JSON.parse(next))
+    applyDoc(unpackDocFromHistory(next))
     setHist({ p: h.past.length, f: h.future.length })
   }, [applyDoc])
 
@@ -146,9 +153,13 @@ export function Planner() {
       ghost: ghostRef.current,
       draggingVertex: dragVertexRef.current,
       showVertexHandles: toolRef.current === 'select' && !placePresetRef.current,
+      underlaySelected: underlaySelectedRef.current,
+      onImageLoad: () => drawRef.current(),
     })
     if (zoomRef.current) zoomRef.current.textContent = `${Math.round(viewRef.current.scale * 100)}%`
   }, [])
+
+  useEffect(() => void (drawRef.current = draw), [draw])
 
   const zoomAt = useCallback(
     (px: number, py: number, factor: number) => {
@@ -227,7 +238,7 @@ export function Planner() {
   // ---------- перерисовка при изменении состояния ----------
   useEffect(() => {
     draw()
-  }, [doc, showGrid, tool, selectedId, placePreset, draw])
+  }, [doc, showGrid, tool, selectedId, placePreset, underlaySelected, draw])
 
   // ---------- очистка выделения ----------
   useEffect(() => {
@@ -355,11 +366,81 @@ export function Planner() {
     toast('Стены удалены — нарисуйте новый контур')
   }, [applyDoc, pushHistory])
 
+  // ---------- подложка ----------
+  const handleUnderlayFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      e.target.value = ''
+      if (!file) return
+      if (!file.type.startsWith('image/')) {
+        toast.error('Выберите файл изображения (PNG, JPG, WebP)')
+        return
+      }
+      try {
+        const { src, imgW, imgH, bytes } = await fileToUnderlaySource(file)
+        const place = computeUnderlayPlacement(imgW, imgH, docRef.current, sizeRef.current, viewRef.current)
+        pushHistory()
+        applyDoc({
+          ...docRef.current,
+          underlay: { src, imgW, imgH, x: place.x, y: place.y, w: place.w, h: place.h, angle: 0, opacity: 0.55, visible: true },
+        })
+        selectedIdRef.current = null
+        setSelectedId(null)
+        underlaySelectedRef.current = true
+        setUnderlaySelected(true)
+        if (bytes > 3 * 1024 * 1024) {
+          toast.warning('Подложка добавлена, но файл большой — автосохранение может замедлиться')
+        } else {
+          toast.success('Подложка добавлена — задайте ей точную ширину в панели справа')
+        }
+      } catch {
+        toast.error('Не удалось прочитать изображение')
+      }
+    },
+    [applyDoc, pushHistory],
+  )
+
+  const updateUnderlay = useCallback(
+    (patch: Partial<Underlay>) => {
+      const u = docRef.current.underlay
+      if (!u) return
+      applyDoc({ ...docRef.current, underlay: { ...u, ...patch } })
+    },
+    [applyDoc],
+  )
+
+  const removeUnderlay = useCallback(() => {
+    if (!docRef.current.underlay) return
+    pushHistory()
+    applyDoc({ ...docRef.current, underlay: null })
+    underlaySelectedRef.current = false
+    setUnderlaySelected(false)
+    toast('Подложка удалена', { icon: '🗑️' })
+  }, [applyDoc, pushHistory])
+
+  const fitUnderlay = useCallback(() => {
+    const u = docRef.current.underlay
+    if (!u) return
+    const place = computeUnderlayPlacement(u.imgW, u.imgH, docRef.current, sizeRef.current, viewRef.current)
+    pushHistory()
+    applyDoc({ ...docRef.current, underlay: { ...u, ...place } })
+  }, [applyDoc, pushHistory])
+
+  const selectUnderlay = useCallback(() => {
+    selectedIdRef.current = null
+    setSelectedId(null)
+    underlaySelectedRef.current = true
+    setUnderlaySelected(true)
+    draw()
+  }, [draw])
+
   const handleNew = useCallback(() => {
     pushHistory()
     applyDoc({ ...DEFAULT_DOC, gridStep: docRef.current.gridStep })
     selectedIdRef.current = null
     setSelectedId(null)
+    underlaySelectedRef.current = false
+    setUnderlaySelected(false)
     drawingPtsRef.current = null
     ghostRef.current = null
     userViewRef.current = false
@@ -381,6 +462,8 @@ export function Planner() {
         applyDoc(parsed)
         selectedIdRef.current = null
         setSelectedId(null)
+        underlaySelectedRef.current = false
+        setUnderlaySelected(false)
         userViewRef.current = false
         fitView()
         draw()
@@ -453,6 +536,11 @@ export function Planner() {
             return
           }
         }
+        const u = docRef.current.underlay
+        if (u && u.visible && pointInRect(u, plan)) {
+          canvas.style.cursor = 'move'
+          return
+        }
       }
       canvas.style.cursor = 'default'
     }
@@ -517,6 +605,10 @@ export function Planner() {
       }
 
       // инструмент выбора
+      if (underlaySelectedRef.current) {
+        underlaySelectedRef.current = false
+        setUnderlaySelected(false)
+      }
       const sel = docRef.current.objects.find((o) => o.id === selectedIdRef.current)
       if (sel) {
         const hp = rotateHandlePos(sel, 26 / viewRef.current.scale)
@@ -549,6 +641,18 @@ export function Planner() {
           return
         }
       }
+      // подложка — выделение и перетаскивание
+      const u = docRef.current.underlay
+      if (u && u.visible && pointInRect(u, plan)) {
+        selectedIdRef.current = null
+        setSelectedId(null)
+        underlaySelectedRef.current = true
+        setUnderlaySelected(true)
+        pushHistory()
+        interRef.current = { type: 'underlayDrag', grabDX: plan.x - u.x, grabDY: plan.y - u.y, moved: false }
+        canvas.style.cursor = 'grabbing'
+        return
+      }
       // пустое место — снять выделение
       selectedIdRef.current = null
       setSelectedId(null)
@@ -574,9 +678,11 @@ export function Planner() {
 
       if (it.type === 'drag') {
         const o = docRef.current.objects.find((x) => x.id === selectedIdRef.current)
-        if (!o || it.grabDX === undefined) return
-        let nx = plan.x - it.grabDX
-        let ny = plan.y - it.grabDY
+        const gdx = it.grabDX
+        const gdy = it.grabDY
+        if (!o || gdx === undefined || gdy === undefined) return
+        let nx = plan.x - gdx
+        let ny = plan.y - gdy
         if (showGridRef.current && !e.altKey) {
           const s = snapObjectPos({ x: nx, y: ny, w: o.w, h: o.h }, docRef.current.gridStep)
           nx = s.x
@@ -584,6 +690,22 @@ export function Planner() {
         }
         it.moved = true
         applyDoc({ ...docRef.current, objects: docRef.current.objects.map((x) => (x.id === o.id ? { ...x, x: nx, y: ny } : x)) })
+        return
+      }
+
+      if (it.type === 'underlayDrag') {
+        const u = docRef.current.underlay
+        const gdx = it.grabDX
+        const gdy = it.grabDY
+        if (!u || gdx === undefined || gdy === undefined) return
+        let nx = plan.x - gdx
+        let ny = plan.y - gdy
+        if (showGridRef.current && !e.altKey) {
+          nx = snapValue(nx - u.w / 2, docRef.current.gridStep) + u.w / 2
+          ny = snapValue(ny - u.h / 2, docRef.current.gridStep) + u.h / 2
+        }
+        it.moved = true
+        applyDoc({ ...docRef.current, underlay: { ...u, x: nx, y: ny } })
         return
       }
 
@@ -626,7 +748,7 @@ export function Planner() {
 
     const onPointerUp = () => {
       const it = interRef.current
-      if (it.type === 'drag' && !it.moved) {
+      if ((it.type === 'drag' || it.type === 'underlayDrag') && !it.moved) {
         // клик без перемещения — убрать пустой шаг истории
         historyRef.current.past.pop()
         setHist({ p: historyRef.current.past.length, f: historyRef.current.future.length })
@@ -693,6 +815,9 @@ export function Planner() {
         } else if (selectedIdRef.current) {
           selectedIdRef.current = null
           setSelectedId(null)
+        } else if (underlaySelectedRef.current) {
+          underlaySelectedRef.current = false
+          setUnderlaySelected(false)
         }
         return
       }
@@ -784,13 +909,15 @@ export function Planner() {
   ])
 
   const selected = doc.objects.find((o) => o.id === selectedId) ?? null
-  const empty = !doc.room && doc.objects.length === 0
+  const empty = !doc.room && doc.objects.length === 0 && !doc.underlay
 
   const hint = tool === 'wall'
     ? 'Кликайте по углам комнаты · Enter или клик по первой точке — замкнуть · ПКМ — убрать точку · Esc — отмена'
     : placePreset
       ? `Размещение: ${placePreset.name} — кликните на плане · Shift+клик — несколько · Esc — отмена`
-      : null
+      : underlaySelected
+        ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
+        : null
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col bg-[#F6F1E9] text-[#3D3428]">
@@ -815,6 +942,8 @@ export function Planner() {
         savedAt={savedAt}
         onNew={handleNew}
         onImportClick={() => fileInputRef.current?.click()}
+        onUnderlayClick={() => underlayInputRef.current?.click()}
+        hasUnderlay={!!doc.underlay}
         onExportPNG={() => {
           exportPNG(docRef.current)
           toast.success('PNG-файл скачивается…')
@@ -875,11 +1004,18 @@ export function Planner() {
             doc={doc}
             showGrid={showGrid}
             selected={selected}
+            underlay={doc.underlay}
+            underlaySelected={underlaySelected}
             onUpdateObject={updateObject}
             onCommit={() => pushHistory()}
             onDeleteObject={deleteObject}
             onDuplicateObject={duplicateObject}
             onClearRoom={clearRoom}
+            onSelectUnderlay={selectUnderlay}
+            onUpdateUnderlay={updateUnderlay}
+            onRemoveUnderlay={removeUnderlay}
+            onFitUnderlay={fitUnderlay}
+            onReplaceUnderlay={() => underlayInputRef.current?.click()}
             onGridStepChange={(s) => applyDoc({ ...docRef.current, gridStep: s })}
             onToggleGrid={(v) => setShowGrid(v)}
           />
@@ -903,6 +1039,13 @@ export function Planner() {
       </footer>
 
       <input ref={fileInputRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
+      <input
+        ref={underlayInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+        className="hidden"
+        onChange={handleUnderlayFile}
+      />
     </div>
   )
 }
