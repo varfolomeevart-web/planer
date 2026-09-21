@@ -27,6 +27,7 @@ import {
   FilePlus2,
   FileUp,
   FileDown,
+  FileText,
   Hand,
   ImageDown,
   ImagePlus,
@@ -68,6 +69,7 @@ interface Props {
   onUnderlayClick: () => void
   hasUnderlay: boolean
   onExportPNG: () => void
+  onExportPDF: () => void
   onExportJSON: () => void
   floors: Floor[]
   currentFloorId: string
@@ -105,6 +107,7 @@ export function TopBar({
   onUnderlayClick,
   hasUnderlay,
   onExportPNG,
+  onExportPDF,
   onExportJSON,
   floors,
   currentFloorId,
@@ -295,6 +298,12 @@ export function TopBar({
           <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportJSON}>
             <FileDown className="mr-1 h-3.5 w-3.5" />
             <span className="hidden md:inline">JSON</span>
+          </Button>
+        </Tip>
+        <Tip label="PDF" hint="скачать план в PDF · все этажи — по страницам">
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportPDF}>
+            <FileText className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">PDF</span>
           </Button>
         </Tip>
         <Tip label="PNG" hint="скачать план картинкой">

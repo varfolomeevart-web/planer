@@ -22,7 +22,7 @@ import {
 } from '@/lib/planner/geometry'
 import { computeUnderlayPlacement, fileToUnderlaySource, packDocForHistory, unpackDocFromHistory } from '@/lib/planner/underlay'
 import { drawScene } from '@/lib/planner/draw'
-import { exportJSON, exportPNG, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
+import { exportJSON, exportPNG, exportPDF, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
 import { Catalog } from './Catalog'
 import { PropertiesPanel } from './PropertiesPanel'
 import { TopBar } from './TopBar'
@@ -1544,6 +1544,10 @@ export function Planner() {
         onExportPNG={() => {
           exportPNG(docRef.current)
           toast.success('PNG-файл скачивается…')
+        }}
+        onExportPDF={() => {
+          toast.success('PDF-файл скачивается…')
+          exportPDF(docRef.current).catch(() => toast.error('Не удалось создать PDF'))
         }}
         onExportJSON={() => {
           exportJSON(docRef.current, showGridRef.current)
