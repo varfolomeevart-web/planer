@@ -49,6 +49,8 @@ import type { Floor, LayerVis, ObjLayer } from '@/lib/planner/types'
 import { LAYERS } from '@/lib/planner/types'
 import type { Tool } from '@/lib/planner/tools'
 import { cn } from '@/lib/utils'
+import { Tip } from './Tip'
+import { ShortcutsDialog } from './ShortcutsDialog'
 
 interface Props {
   tool: Tool
@@ -77,14 +79,14 @@ interface Props {
   onToggleLayer: (id: ObjLayer) => void
 }
 
-const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; key: string }[] = [
-  { id: 'select', label: 'Выбор', icon: MousePointer2, key: '1' },
-  { id: 'wall', label: 'Стены', icon: PencilLine, key: '2' },
-  { id: 'partition', label: 'Перегородки', icon: BrickWall, key: '3' },
-  { id: 'erase', label: 'Ластик', icon: Eraser, key: '5' },
-  { id: 'ruler', label: 'Рулетка', icon: Ruler, key: '6' },
-  { id: 'dimension', label: 'Размер', icon: MoveHorizontal, key: '7' },
-  { id: 'pan', label: 'Рука', icon: Hand, key: '4' },
+const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; keys: string[][]; hint: string }[] = [
+  { id: 'select', label: 'Выбор', icon: MousePointer2, keys: [['1'], ['V']], hint: 'клик — выбрать, потянуть — переместить' },
+  { id: 'wall', label: 'Стены', icon: PencilLine, keys: [['2'], ['W']], hint: 'клик — точка, Enter — завершить' },
+  { id: 'partition', label: 'Перегородки', icon: BrickWall, keys: [['3'], ['P']], hint: 'прилипают к стенам, сетке и друг другу' },
+  { id: 'erase', label: 'Ластик', icon: Eraser, keys: [['5'], ['E']], hint: 'клик по сегменту или вершине — стереть' },
+  { id: 'ruler', label: 'Рулетка', icon: Ruler, keys: [['6']], hint: 'зажми и протяни вдоль расстояния' },
+  { id: 'dimension', label: 'Размер', icon: MoveHorizontal, keys: [['7']], hint: 'клик — начало, клик — конец' },
+  { id: 'pan', label: 'Рука', icon: Hand, keys: [['4'], ['H']], hint: 'тяни вид или удерживай Space' },
 ]
 
 export function TopBar({
@@ -146,56 +148,59 @@ export function TopBar({
             <span className="hidden sm:inline">{f.name}</span>
           </button>
         ))}
-        <button
-          onClick={onAddFloor}
-          title="Добавить этаж (максимум 20)"
-          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="hidden md:inline">Этаж</span>
-        </button>
-        <button
-          onClick={onCopyFloor}
-          title="Скопировать текущий этаж со всеми объектами"
-          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
-        >
-          <CopyPlus className="h-4 w-4" />
-          <span className="hidden xl:inline">Копия</span>
-        </button>
-        {floors.length > 1 && (
+        <Tip label="Добавить этаж" hint="максимум 20 этажей">
           <button
-            onClick={onDeleteFloor}
-            title="Удалить текущий этаж"
-            className="flex items-center rounded-lg px-2 py-1.5 text-xs font-semibold text-[#B3401E] transition-all hover:bg-[#F3DFD6]"
+            onClick={onAddFloor}
+            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
           >
-            <Trash2 className="h-4 w-4" />
+            <Plus className="h-4 w-4" />
+            <span className="hidden md:inline">Этаж</span>
           </button>
+        </Tip>
+        <Tip label="Копия этажа" hint="всё содержимое — на новый этаж">
+          <button
+            onClick={onCopyFloor}
+            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
+          >
+            <CopyPlus className="h-4 w-4" />
+            <span className="hidden xl:inline">Копия</span>
+          </button>
+        </Tip>
+        {floors.length > 1 && (
+          <Tip label="Удалить этаж" hint="текущий этаж и его объекты">
+            <button
+              onClick={onDeleteFloor}
+              className="flex items-center rounded-lg px-2 py-1.5 text-xs font-semibold text-[#B3401E] transition-all hover:bg-[#F3DFD6]"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </Tip>
         )}
       </div>
 
       {/* Инструменты */}
       <div className="flex items-center gap-1 rounded-xl bg-[#F1E9DA] p-1">
         {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTool(t.id)}
-            title={`${t.label} (${t.key})`}
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all',
-              tool === t.id ? 'bg-[#E8730C] text-white shadow-sm' : 'text-[#6B5D4F] hover:bg-[#E9DECB]',
-            )}
-          >
-            <t.icon className="h-4 w-4" />
-            <span className="hidden lg:inline">{t.label}</span>
-          </button>
+          <Tip key={t.id} label={t.label} keys={t.keys} hint={t.hint}>
+            <button
+              onClick={() => setTool(t.id)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all',
+                tool === t.id ? 'bg-[#E8730C] text-white shadow-sm' : 'text-[#6B5D4F] hover:bg-[#E9DECB]',
+              )}
+            >
+              <t.icon className="h-4 w-4" />
+              <span className="hidden lg:inline">{t.label}</span>
+            </button>
+          </Tip>
         ))}
       </div>
 
       {/* Слои */}
+      <Tip label="Слои" hint="вытяжка · вода · электрика">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            title="Слои: вытяжка, вода, электрика"
             className="flex items-center gap-1.5 rounded-xl bg-[#F1E9DA] px-2.5 py-2 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
           >
             <Layers className="h-4 w-4" />
@@ -218,25 +223,42 @@ export function TopBar({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      </Tip>
 
       {/* История и вид */}
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onUndo} disabled={!canUndo} title="Отменить (Ctrl+Z)">
-          <Undo2 className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onRedo} disabled={!canRedo} title="Повторить (Ctrl+Shift+Z)">
-          <Redo2 className="h-4 w-4" />
-        </Button>
+        <Tip label="Отменить" keys={[['Ctrl', 'Z']]}>
+          <span className="inline-flex">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onUndo} disabled={!canUndo}>
+              <Undo2 className="h-4 w-4" />
+            </Button>
+          </span>
+        </Tip>
+        <Tip label="Повторить" keys={[['Ctrl', 'Shift', 'Z'], ['Ctrl', 'Y']]}>
+          <span className="inline-flex">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onRedo} disabled={!canRedo}>
+              <Redo2 className="h-4 w-4" />
+            </Button>
+          </span>
+        </Tip>
         <div className="mx-0.5 h-6 w-px bg-[#E7DECF]" />
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onZoomOut} title="Уменьшить">
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onZoomIn} title="Увеличить">
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onFit} title="Вписать в экран">
-          <Maximize className="h-4 w-4" />
-        </Button>
+        <Tip label="Уменьшить" keys={[['Колесо мыши']]}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onZoomOut}>
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+        </Tip>
+        <Tip label="Увеличить" keys={[['Колесо мыши']]}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onZoomIn}>
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+        </Tip>
+        <Tip label="Вписать в экран">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6B5D4F] hover:bg-[#F1E9DA]" onClick={onFit}>
+            <Maximize className="h-4 w-4" />
+          </Button>
+        </Tip>
+        <div className="mx-0.5 h-6 w-px bg-[#E7DECF]" />
+        <ShortcutsDialog />
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">
@@ -246,22 +268,30 @@ export function TopBar({
           <span className="text-[11px] font-semibold text-[#5D8A4E]">{savedAt ? `Сохранено ${savedAt}` : 'Автосохранение'}</span>
         </div>
 
-        <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onUnderlayClick} title={hasUnderlay ? 'Заменить план-подложку' : 'Загрузить план-подложку (скан/фото) для обводки'}>
-          <ImagePlus className="mr-1 h-3.5 w-3.5" />
-          <span className="hidden md:inline">Подложка</span>
-        </Button>
-        <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onImportClick} title="Импорт из JSON">
-          <FileUp className="mr-1 h-3.5 w-3.5" />
-          <span className="hidden md:inline">Импорт</span>
-        </Button>
-        <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportJSON} title="Скачать проект JSON">
-          <FileDown className="mr-1 h-3.5 w-3.5" />
-          <span className="hidden md:inline">JSON</span>
-        </Button>
-        <Button size="sm" className="h-8 bg-[#E8730C] text-xs text-white shadow-sm hover:bg-[#D4660A]" onClick={onExportPNG} title="Скачать план картинкой PNG">
-          <ImageDown className="mr-1 h-3.5 w-3.5" />
-          <span className="hidden md:inline">PNG</span>
-        </Button>
+        <Tip label="Подложка" hint={hasUnderlay ? 'заменить скан или фото плана' : 'скан или фото плана — рисуйте поверх'}>
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onUnderlayClick}>
+            <ImagePlus className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">Подложка</span>
+          </Button>
+        </Tip>
+        <Tip label="Импорт" hint="загрузить проект из JSON-файла">
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onImportClick}>
+            <FileUp className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">Импорт</span>
+          </Button>
+        </Tip>
+        <Tip label="JSON" hint="сохранить проект в файл">
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportJSON}>
+            <FileDown className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">JSON</span>
+          </Button>
+        </Tip>
+        <Tip label="PNG" hint="скачать план картинкой">
+          <Button size="sm" className="h-8 bg-[#E8730C] text-xs text-white shadow-sm hover:bg-[#D4660A]" onClick={onExportPNG}>
+            <ImageDown className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">PNG</span>
+          </Button>
+        </Tip>
 
         <AlertDialog>
           <AlertDialogTrigger asChild>

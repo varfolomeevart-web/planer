@@ -30,14 +30,24 @@ import { TopBar } from './TopBar'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { PencilLine, Ruler } from 'lucide-react'
+import {
+  CURSOR_ARROW,
+  CURSOR_DIM,
+  CURSOR_ERASE,
+  CURSOR_GRAB,
+  CURSOR_GRABBING,
+  CURSOR_MOVE,
+  CURSOR_PARTITION,
+  CURSOR_PLACE,
+  CURSOR_ROTATE,
+  CURSOR_RULER,
+  CURSOR_VERTEX,
+  CURSOR_WALL,
+} from '@/lib/planner/cursors'
 
 const STORAGE_KEY = 'room-planner-v1'
 const MIN_SCALE = 0.02
 const MAX_SCALE = 2
-
-/** Чёрный перекрестье-курсор с белой окантовкой — видно на любом фоне */
-const CURSOR_CROSS =
-  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='31' height='31' viewBox='0 0 31 31'><path d='M15.5 2v27M2 15.5h27' stroke='white' stroke-width='3.6' stroke-linecap='round'/><path d='M15.5 2v27M2 15.5h27' stroke='black' stroke-width='1.8' stroke-linecap='round'/></svg>\") 15 15, crosshair"
 
 interface Interaction {
   type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex' | 'underlayDrag' | 'partitionVertex' | 'ruler'
@@ -841,18 +851,31 @@ export function Planner() {
 
     const updateCursorStyle = (plan: Pt | null) => {
       if (spaceRef.current || toolRef.current === 'pan' || interRef.current.type === 'pan') {
-        canvas.style.cursor = interRef.current.type === 'pan' ? 'grabbing' : 'grab'
+        canvas.style.cursor = interRef.current.type === 'pan' ? CURSOR_GRABBING : CURSOR_GRAB
         return
       }
-      if (
-        toolRef.current === 'wall' ||
-        toolRef.current === 'partition' ||
-        toolRef.current === 'erase' ||
-        toolRef.current === 'ruler' ||
-        toolRef.current === 'dimension' ||
-        placePresetRef.current
-      ) {
-        canvas.style.cursor = CURSOR_CROSS
+      if (placePresetRef.current) {
+        canvas.style.cursor = CURSOR_PLACE
+        return
+      }
+      if (toolRef.current === 'wall') {
+        canvas.style.cursor = CURSOR_WALL
+        return
+      }
+      if (toolRef.current === 'partition') {
+        canvas.style.cursor = CURSOR_PARTITION
+        return
+      }
+      if (toolRef.current === 'erase') {
+        canvas.style.cursor = CURSOR_ERASE
+        return
+      }
+      if (toolRef.current === 'ruler') {
+        canvas.style.cursor = CURSOR_RULER
+        return
+      }
+      if (toolRef.current === 'dimension') {
+        canvas.style.cursor = CURSOR_DIM
         return
       }
       if (plan) {
@@ -862,14 +885,14 @@ export function Planner() {
         if (sel) {
           const hp = rotateHandlePos(sel, 26 / viewRef.current.scale)
           if (Math.hypot((hp.x - plan.x) * viewRef.current.scale, (hp.y - plan.y) * viewRef.current.scale) < 10) {
-            canvas.style.cursor = 'pointer'
+            canvas.style.cursor = CURSOR_ROTATE
             return
           }
         }
         if (fl.room) {
           for (const p of fl.room) {
             if (Math.hypot((p.x - plan.x) * viewRef.current.scale, (p.y - plan.y) * viewRef.current.scale) < 9) {
-              canvas.style.cursor = 'pointer'
+              canvas.style.cursor = CURSOR_VERTEX
               return
             }
           }
@@ -878,7 +901,7 @@ export function Planner() {
         if (selPart) {
           for (const p of selPart.pts) {
             if (Math.hypot((p.x - plan.x) * viewRef.current.scale, (p.y - plan.y) * viewRef.current.scale) < 9) {
-              canvas.style.cursor = 'pointer'
+              canvas.style.cursor = CURSOR_VERTEX
               return
             }
           }
@@ -887,31 +910,31 @@ export function Planner() {
           const o = fl.objects[i]
           if (!vis[o.layer ?? 'furniture']) continue
           if (pointInObject(o, plan)) {
-            canvas.style.cursor = 'move'
+            canvas.style.cursor = CURSOR_MOVE
             return
           }
         }
         for (const part of fl.partitions) {
           for (let j = 0; j < part.pts.length - 1; j++) {
             if (distToSegment(plan, part.pts[j], part.pts[j + 1]) * viewRef.current.scale < 8) {
-              canvas.style.cursor = 'pointer'
+              canvas.style.cursor = CURSOR_ARROW
               return
             }
           }
         }
         for (const d of fl.dimensions) {
           if (distToSegment(plan, d.a, d.b) * viewRef.current.scale < 8) {
-            canvas.style.cursor = 'pointer'
+            canvas.style.cursor = CURSOR_ARROW
             return
           }
         }
         const u = fl.underlay
         if (u && u.visible && pointInRect(u, plan)) {
-          canvas.style.cursor = 'move'
+          canvas.style.cursor = CURSOR_MOVE
           return
         }
       }
-      canvas.style.cursor = 'default'
+      canvas.style.cursor = CURSOR_ARROW
     }
 
     const onPointerDown = (e: PointerEvent) => {
@@ -925,7 +948,7 @@ export function Planner() {
           type: 'pan',
           panStart: { ox: viewRef.current.ox, oy: viewRef.current.oy, px: pos.x, py: pos.y },
         }
-        canvas.style.cursor = 'grabbing'
+        canvas.style.cursor = CURSOR_GRABBING
         return
       }
 
@@ -1032,7 +1055,7 @@ export function Planner() {
         if (Math.hypot((hp.x - plan.x) * viewRef.current.scale, (hp.y - plan.y) * viewRef.current.scale) < 10) {
           pushHistory()
           interRef.current = { type: 'rotate' }
-          canvas.style.cursor = 'grabbing'
+          canvas.style.cursor = CURSOR_GRABBING
           return
         }
       }
@@ -1070,7 +1093,7 @@ export function Planner() {
           setSelectedId(o.id)
           pushHistory()
           interRef.current = { type: 'drag', grabDX: plan.x - o.x, grabDY: plan.y - o.y, moved: false }
-          canvas.style.cursor = 'grabbing'
+          canvas.style.cursor = CURSOR_GRABBING
           return
         }
       }
@@ -1111,7 +1134,7 @@ export function Planner() {
         setUnderlaySelected(true)
         pushHistory()
         interRef.current = { type: 'underlayDrag', grabDX: plan.x - u.x, grabDY: plan.y - u.y, moved: false }
-        canvas.style.cursor = 'grabbing'
+        canvas.style.cursor = CURSOR_GRABBING
         return
       }
       // пустое место — снять выделение
@@ -1379,13 +1402,13 @@ export function Planner() {
         return
       }
 
-      if (e.code === 'KeyV' || e.code === 'Digit1') handleToolChange('select')
-      if (e.code === 'KeyW' || e.code === 'Digit2') handleToolChange('wall')
-      if (e.code === 'KeyP' || e.code === 'Digit3') handleToolChange('partition')
-      if (e.code === 'KeyH' || e.code === 'Digit4') handleToolChange('pan')
-      if (e.code === 'KeyE' || e.code === 'Digit5') handleToolChange('erase')
-      if (e.code === 'Digit6') handleToolChange('ruler')
-      if (e.code === 'Digit7') handleToolChange('dimension')
+      if (e.code === 'KeyV' || (e.code === 'Digit1' && !e.shiftKey)) handleToolChange('select')
+      if (e.code === 'KeyW' || (e.code === 'Digit2' && !e.shiftKey)) handleToolChange('wall')
+      if (e.code === 'KeyP' || (e.code === 'Digit3' && !e.shiftKey)) handleToolChange('partition')
+      if (e.code === 'KeyH' || (e.code === 'Digit4' && !e.shiftKey)) handleToolChange('pan')
+      if (e.code === 'KeyE' || (e.code === 'Digit5' && !e.shiftKey)) handleToolChange('erase')
+      if (e.code === 'Digit6' && !e.shiftKey) handleToolChange('ruler')
+      if (e.code === 'Digit7' && !e.shiftKey) handleToolChange('dimension')
 
       // стрелки — точное перемещение
       if (selectedIdRef.current && e.key.startsWith('Arrow')) {
