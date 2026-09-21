@@ -46,7 +46,7 @@ import {
   Sofa,
 } from 'lucide-react'
 import type { Floor, LayerVis, ObjLayer } from '@/lib/planner/types'
-import { LAYERS } from '@/lib/planner/types'
+import { ENG_COLORS, LAYERS } from '@/lib/planner/types'
 import type { Tool } from '@/lib/planner/tools'
 import { cn } from '@/lib/utils'
 import { Tip } from './Tip'
@@ -218,7 +218,18 @@ export function TopBar({
               onSelect={(e) => e.preventDefault()}
               className="text-xs text-[#3D3428] data-[highlighted]:bg-[#F1E9DA]"
             >
-              {l.name}
+              <span className="flex items-center gap-2">
+                {l.id !== 'furniture' && (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{
+                      backgroundColor: ENG_COLORS[l.id].fill,
+                      boxShadow: `inset 0 0 0 1.5px ${ENG_COLORS[l.id].stroke}`,
+                    }}
+                  />
+                )}
+                {l.name}
+              </span>
             </DropdownMenuCheckboxItem>
           ))}
         </DropdownMenuContent>

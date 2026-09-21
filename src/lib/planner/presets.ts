@@ -1,4 +1,4 @@
-import type { ObjLayer } from './types'
+import { ENG_COLORS, type ObjLayer } from './types'
 
 export interface Preset {
   id: string
@@ -67,18 +67,34 @@ export const PRESETS: Preset[] = [
   // Окна
   { id: 'window_120', name: 'Окно 120 см', category: 'windows', w: 120, h: 14, color: '#D7E5EC' },
   { id: 'window_180', name: 'Окно 180 см', category: 'windows', w: 180, h: 14, color: '#D7E5EC' },
-  // Инженерия: вытяжка/вентиляция
-  { id: 'hood', name: 'Вытяжка', category: 'eng', w: 60, h: 60, color: '#E3E6E8', layer: 'vent' },
-  { id: 'vent_channel', name: 'Вентканал', category: 'eng', w: 40, h: 40, color: '#E3E6E8', layer: 'vent' },
-  // Инженерия: вода
-  { id: 'water_riser', name: 'Стояк воды', category: 'eng', w: 30, h: 30, color: '#CBDDE8', layer: 'water' },
-  { id: 'water_pipe', name: 'Труба воды', category: 'eng', w: 120, h: 10, color: '#CBDDE8', layer: 'water' },
-  { id: 'sewer_pipe', name: 'Канализация', category: 'eng', w: 120, h: 10, color: '#D8CBB6', layer: 'water' },
-  // Инженерия: электрика
-  { id: 'socket', name: 'Розетка', category: 'eng', w: 16, h: 16, color: '#F0E8C8', layer: 'electric' },
-  { id: 'switch', name: 'Выключатель', category: 'eng', w: 16, h: 16, color: '#F0E8C8', layer: 'electric' },
-  { id: 'lamp', name: 'Светильник', category: 'eng', w: 36, h: 36, color: '#F5EFD8', layer: 'electric' },
-  { id: 'panel_el', name: 'Электрощиток', category: 'eng', w: 40, h: 60, color: '#F0E8C8', layer: 'electric' },
+  // Инженерия: вентиляция — серый
+  { id: 'hood', name: 'Вытяжка', category: 'eng', w: 60, h: 60, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'vent_channel', name: 'Вентканал', category: 'eng', w: 40, h: 40, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'vent_duct', name: 'Воздуховод', category: 'eng', w: 150, h: 25, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'vent_grille', name: 'Вентрешётка', category: 'eng', w: 30, h: 12, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'vent_fan', name: 'Вентилятор', category: 'eng', w: 25, h: 25, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'vent_valve', name: 'Приточный клапан', category: 'eng', w: 16, h: 16, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  { id: 'ac_unit', name: 'Кондиционер', category: 'eng', w: 88, h: 28, color: ENG_COLORS.vent.fill, layer: 'vent' },
+  // Инженерия: вода — синий
+  { id: 'water_riser', name: 'Стояк воды', category: 'eng', w: 30, h: 30, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'water_pipe', name: 'Труба воды', category: 'eng', w: 120, h: 10, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'sewer_pipe', name: 'Канализация', category: 'eng', w: 120, h: 10, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'water_heater', name: 'Водонагреватель', category: 'eng', w: 45, h: 45, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'radiator', name: 'Радиатор', category: 'eng', w: 100, h: 14, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'heated_manifold', name: 'Коллектор тёплого пола', category: 'eng', w: 35, h: 20, color: ENG_COLORS.water.fill, layer: 'water' },
+  { id: 'towel_dryer', name: 'Полотенцесушитель', category: 'eng', w: 45, h: 55, color: ENG_COLORS.water.fill, layer: 'water' },
+  // Инженерия: электрика — красный
+  { id: 'socket', name: 'Розетка', category: 'eng', w: 16, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'socket_double', name: 'Двойная розетка', category: 'eng', w: 22, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'switch', name: 'Выключатель', category: 'eng', w: 16, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'lamp', name: 'Точечный светильник', category: 'eng', w: 36, h: 36, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'chandelier', name: 'Люстра', category: 'eng', w: 60, h: 60, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'wall_lamp', name: 'Бра', category: 'eng', w: 20, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'panel_el', name: 'Электрощиток', category: 'eng', w: 40, h: 60, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'net_socket', name: 'ТВ/интернет-розетка', category: 'eng', w: 16, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'warm_floor', name: 'Электр. тёплый пол', category: 'eng', w: 150, h: 100, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'motion_sensor', name: 'Датчик движения', category: 'eng', w: 16, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  { id: 'cable_tray', name: 'Кабель-канал', category: 'eng', w: 120, h: 8, color: ENG_COLORS.electric.fill, layer: 'electric' },
   // Разное
   { id: 'plant', name: 'Растение', category: 'misc', w: 40, h: 40, color: '#C7D2BB' },
   { id: 'custom', name: 'Свой объект', category: 'misc', w: 100, h: 80, color: '#EDE3D3' },
@@ -87,6 +103,13 @@ export const PRESETS: Preset[] = [
 export function getPreset(id: string): Preset {
   return PRESETS.find((p) => p.id === id) ?? PRESETS[PRESETS.length - 1]
 }
+
+/** Цветовые группы инженерных объектов (порядок совпадает с порядком в каталоге) */
+export const ENG_GROUPS: { layer: Exclude<ObjLayer, 'furniture'>; name: string }[] = [
+  { layer: 'vent', name: 'Вентиляция' },
+  { layer: 'water', name: 'Вода' },
+  { layer: 'electric', name: 'Электрика' },
+]
 
 /** Двери и окна привязываются к стенам */
 export function isDoorWindowPreset(presetId: string): boolean {

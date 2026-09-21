@@ -109,6 +109,13 @@ export const OBJECT_COLORS = [
   '#C9A87E',
 ]
 
+/** Цвета инженерных слоёв: вентиляция — серый, вода — синий, электрика — красный */
+export const ENG_COLORS: Record<Exclude<ObjLayer, 'furniture'>, { fill: string; stroke: string }> = {
+  vent: { fill: '#C6CBD1', stroke: '#6B7280' },
+  water: { fill: '#A9CDEA', stroke: '#2F6DA4' },
+  electric: { fill: '#EFA9A2', stroke: '#C0392B' },
+}
+
 export const LAYERS: { id: ObjLayer; name: string }[] = [
   { id: 'furniture', name: 'Мебель и стены' },
   { id: 'vent', name: 'Вытяжка и вентиляция' },

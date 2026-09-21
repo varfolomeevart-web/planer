@@ -1,5 +1,6 @@
 import type { Dimension, LayerVis, Partition, PlannerDoc, PlannerObject, Pt, Underlay } from './types'
-import { DEFAULT_LAYERS } from './types'
+import { DEFAULT_LAYERS, ENG_COLORS } from './types'
+import { getPreset } from './presets'
 import { isStairs } from './floors'
 import { rotateHandlePos } from './geometry'
 
@@ -104,7 +105,9 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
   ctx.save()
   ctx.scale(scale, scale)
   ctx.lineWidth = lw
-  ctx.strokeStyle = COLORS.detail
+  // инженерные объекты: контур в цвет своей группы (вентиляция — серый, вода — синий, электрика — красный)
+  const engLayer = getPreset(presetId).layer
+  ctx.strokeStyle = engLayer && engLayer !== 'furniture' ? ENG_COLORS[engLayer].stroke : COLORS.detail
   ctx.fillStyle = color
 
   const hw = w / 2
@@ -627,6 +630,77 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
       }
       break
     }
+    case 'vent_duct': {
+      base(3)
+      ctx.lineWidth = lw2
+      // стенки воздуховода
+      const off = Math.max(2.5, h * 0.22)
+      ctx.beginPath()
+      ctx.moveTo(-hw + 4, -off)
+      ctx.lineTo(hw - 4, -off)
+      ctx.moveTo(-hw + 4, off)
+      ctx.lineTo(hw - 4, off)
+      ctx.stroke()
+      // фланцы по концам
+      ctx.beginPath()
+      ctx.moveTo(-hw + 14, -off)
+      ctx.lineTo(-hw + 14, off)
+      ctx.moveTo(hw - 14, -off)
+      ctx.lineTo(hw - 14, off)
+      ctx.stroke()
+      break
+    }
+    case 'vent_grille': {
+      base(1)
+      ctx.lineWidth = lw2
+      const n = Math.max(2, Math.round(h / 5))
+      for (let i = 1; i < n; i++) {
+        const y = -hh + (h / n) * i
+        ctx.beginPath()
+        ctx.moveTo(-hw + 2, y)
+        ctx.lineTo(hw - 2, y)
+        ctx.stroke()
+      }
+      break
+    }
+    case 'vent_fan':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      for (let i = 0; i < 4; i++) {
+        const a = (Math.PI / 2) * i
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.lineTo(Math.cos(a) * hw * 0.72, Math.sin(a) * hw * 0.72)
+        ctx.stroke()
+      }
+      break
+    case 'vent_valve':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.45, 0)
+      ctx.lineTo(hw * 0.45, 0)
+      ctx.moveTo(0, -hw * 0.45)
+      ctx.lineTo(0, hw * 0.45)
+      ctx.stroke()
+      break
+    case 'ac_unit': {
+      base(3)
+      ctx.lineWidth = lw2
+      // жалюзи
+      ctx.strokeRect(-hw + 5, -hh + 4, w - 10, h * 0.3)
+      ctx.beginPath()
+      ctx.moveTo(-hw + 6, hh - 8)
+      ctx.lineTo(hw - 6, hh - 8)
+      ctx.stroke()
+      break
+    }
     // ---------- Инженерия: вода ----------
     case 'water_riser':
       ctx.beginPath()
@@ -657,6 +731,71 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
       ctx.beginPath()
       ctx.arc(hw - 10, 0, mr, 0, Math.PI * 2)
       ctx.stroke()
+      break
+    }
+    case 'water_heater':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.68, 0, Math.PI * 2)
+      ctx.stroke()
+      // волна — символ воды
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.4, 0)
+      ctx.quadraticCurveTo(-hw * 0.2, -hw * 0.3, 0, 0)
+      ctx.quadraticCurveTo(hw * 0.2, hw * 0.3, hw * 0.4, 0)
+      ctx.stroke()
+      break
+    case 'radiator': {
+      base(2)
+      ctx.lineWidth = lw2
+      const n = Math.max(4, Math.round(w / 14))
+      for (let i = 1; i < n; i++) {
+        const x = -hw + (w / n) * i
+        ctx.beginPath()
+        ctx.moveTo(x, -hh + 2)
+        ctx.lineTo(x, hh - 2)
+        ctx.stroke()
+      }
+      break
+    }
+    case 'heated_manifold': {
+      base(2)
+      ctx.lineWidth = lw2
+      const cr = Math.min(5, h * 0.3)
+      ctx.beginPath()
+      ctx.arc(-hw * 0.45, 0, cr, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(hw * 0.45, 0, cr, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.45, 0)
+      ctx.lineTo(hw * 0.45, 0)
+      ctx.stroke()
+      break
+    }
+    case 'towel_dryer': {
+      base(3)
+      ctx.lineWidth = lw2
+      // лестница-полотенцесушитель
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.5, -hh + 3)
+      ctx.lineTo(-hw * 0.5, hh - 3)
+      ctx.moveTo(hw * 0.5, -hh + 3)
+      ctx.lineTo(hw * 0.5, hh - 3)
+      ctx.stroke()
+      const nRungs = Math.max(3, Math.round(h / 12))
+      for (let i = 0; i <= nRungs; i++) {
+        const y = -hh + 3 + ((h - 6) / nRungs) * i
+        ctx.beginPath()
+        ctx.moveTo(-hw * 0.5, y)
+        ctx.lineTo(hw * 0.5, y)
+        ctx.stroke()
+      }
       break
     }
     // ---------- Инженерия: электрика ----------
@@ -711,6 +850,118 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
       ctx.lineTo(3, -2)
       ctx.lineTo(-4, hh - 8)
       ctx.stroke()
+      break
+    }
+    case 'socket_double': {
+      const r = Math.min(hh, w / 4) * 0.9
+      for (const dx of [-w / 4, w / 4]) {
+        ctx.beginPath()
+        ctx.arc(dx, 0, r, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+      ctx.lineWidth = lw2
+      for (const dx of [-w / 4, w / 4]) {
+        for (const off of [-r * 0.32, r * 0.32]) {
+          ctx.beginPath()
+          ctx.arc(dx + off, 0, Math.max(1, r * 0.13), 0, Math.PI * 2)
+          ctx.fillStyle = COLORS.detailStrong
+          ctx.fill()
+        }
+      }
+      break
+    }
+    case 'chandelier':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.38, 0, Math.PI * 2)
+      ctx.stroke()
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI / 4) * i
+        ctx.beginPath()
+        ctx.moveTo(Math.cos(a) * hw * 0.55, Math.sin(a) * hw * 0.55)
+        ctx.lineTo(Math.cos(a) * hw * 0.85, Math.sin(a) * hw * 0.85)
+        ctx.stroke()
+      }
+      break
+    case 'wall_lamp':
+      // полукруг с плоской стороной к стене
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, Math.PI * 0.5, Math.PI * 1.5)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.5, Math.PI * 0.5, Math.PI * 1.5)
+      ctx.stroke()
+      break
+    case 'net_socket': {
+      base(3)
+      ctx.lineWidth = lw2
+      // символ: экран ТВ + линия сети
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.45, -hh * 0.35)
+      ctx.lineTo(hw * 0.45, -hh * 0.35)
+      ctx.lineTo(0, hh * 0.2)
+      ctx.closePath()
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.35, hh * 0.45)
+      ctx.lineTo(hw * 0.35, hh * 0.45)
+      ctx.stroke()
+      break
+    }
+    case 'warm_floor': {
+      base(6)
+      ctx.lineWidth = lw2
+      // змейка нагревательного кабеля
+      const rows = Math.max(3, Math.round(h / 28))
+      const rh = (h - 12) / rows
+      ctx.beginPath()
+      for (let i = 0; i < rows; i++) {
+        const y = -hh + 6 + i * rh
+        ctx.moveTo(-hw + 6, y + rh / 2)
+        ctx.lineTo(hw - 6, y + rh / 2)
+        if (i < rows - 1) {
+          const x = i % 2 === 0 ? hw - 6 : -hw + 6
+          ctx.lineTo(x, y + rh)
+        }
+      }
+      ctx.stroke()
+      break
+    }
+    case 'motion_sensor':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.arc(0, 0, Math.max(1.2, hw * 0.18), 0, Math.PI * 2)
+      ctx.fillStyle = COLORS.detailStrong
+      ctx.fill()
+      // волны обнаружения
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.55, -Math.PI * 0.25, Math.PI * 0.25)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.8, -Math.PI * 0.35, Math.PI * 0.35)
+      ctx.stroke()
+      break
+    case 'cable_tray': {
+      base(2)
+      ctx.lineWidth = lw2
+      ctx.setLineDash([6 / scale, 4 / scale])
+      ctx.beginPath()
+      ctx.moveTo(-hw + 5, 0)
+      ctx.lineTo(hw - 5, 0)
+      ctx.stroke()
+      ctx.setLineDash([])
       break
     }
     case 'plant':

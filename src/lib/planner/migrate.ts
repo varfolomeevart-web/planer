@@ -1,5 +1,8 @@
 import type { Dimension, Floor, LayerVis, PlannerDoc, PlannerObject, Partition, Pt, Underlay } from './types'
-import { DEFAULT_LAYERS, DEFAULT_GRID_STEP, MAX_FLOORS, emptyFloor, uid } from './types'
+import { DEFAULT_LAYERS, DEFAULT_GRID_STEP, ENG_COLORS, MAX_FLOORS, emptyFloor, uid } from './types'
+
+/** Старая палитра инженерии (до цветового разделения по слоям) — при загрузке заменяется на цвет слоя */
+const OLD_ENG_COLORS = new Set(['#e3e6e8', '#cbdde8', '#d8cbb6', '#f0e8c8', '#f5efd8'])
 
 /**
  * Универсальная миграция сохранений.
@@ -57,7 +60,9 @@ function objOf(v: unknown): PlannerObject | null {
   out.w = Math.max(1, Math.min(w, 100000))
   out.h = Math.max(1, Math.min(h, 100000))
   out.angle = num(v.angle) ?? 0
-  out.color = str(v.color) ?? '#EDE3D3'
+  const colorStr = (str(v.color) ?? '#EDE3D3').toLowerCase()
+  // инженерные объекты из старых сохранений перекрашиваем в цвет их слоя
+  out.color = layer !== 'furniture' && OLD_ENG_COLORS.has(colorStr) ? ENG_COLORS[layer].fill : colorStr
   out.layer = layer
   if (typeof v.flip === 'boolean') out.flip = v.flip
   if (typeof v.showNext === 'boolean') out.showNext = v.showNext

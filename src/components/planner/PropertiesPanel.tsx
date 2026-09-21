@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import type { Dimension, Floor, Partition, PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
-import { GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
+import { ENG_COLORS, GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
+import { ENG_GROUPS } from '@/lib/planner/presets'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
 import { fmtLen } from '@/lib/planner/draw'
 import { Input } from '@/components/ui/input'
@@ -131,6 +132,8 @@ export function PropertiesPanel({
     ? selectedPartition.pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - selectedPartition.pts[i].x, p.y - selectedPartition.pts[i].y), 0)
     : 0
   const dimLen = selectedDimension ? Math.hypot(selectedDimension.b.x - selectedDimension.a.x, selectedDimension.b.y - selectedDimension.a.y) : 0
+  // инженерный слой выделенного объекта (для цветного бейджа)
+  const selLayer = selected && selected.layer && selected.layer !== 'furniture' ? selected.layer : null
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto planner-scroll">
@@ -171,6 +174,21 @@ export function PropertiesPanel({
         <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">Объект</h3>
         {selected ? (
           <div className="space-y-3">
+            {selLayer && (
+              <div
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#F7F1E6] px-2.5 py-0.5 text-[11px] font-semibold"
+                style={{ color: ENG_COLORS[selLayer].stroke }}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    backgroundColor: ENG_COLORS[selLayer].fill,
+                    boxShadow: `inset 0 0 0 1.5px ${ENG_COLORS[selLayer].stroke}`,
+                  }}
+                />
+                {ENG_GROUPS.find((g) => g.layer === selLayer)?.name ?? 'Инженерия'}
+              </div>
+            )}
             <div>
               <Label htmlFor="obj-name" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
                 Название
