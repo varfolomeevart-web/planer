@@ -804,9 +804,6 @@ function drawStairsGhost(ctx: CanvasRenderingContext2D, o: PlannerObject, view: 
     ctx.stroke()
   }
   ctx.restore()
-  // подпись под призраком
-  const r = (Math.hypot(o.w, o.h) / 2) * view.scale
-  drawLabel(ctx, 'Лестница', cx, cy + r + 14, { accent: true })
 }
 
 /** Внутренние стены-перегородки: полилинии + длины сегментов */

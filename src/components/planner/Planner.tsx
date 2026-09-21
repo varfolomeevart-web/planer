@@ -20,7 +20,6 @@ import {
   snapValue,
   floorWallSegments,
 } from '@/lib/planner/geometry'
-import { roomCenter, viewAnchor } from '@/lib/planner/floors'
 import { computeUnderlayPlacement, fileToUnderlaySource, packDocForHistory, unpackDocFromHistory } from '@/lib/planner/underlay'
 import { drawScene } from '@/lib/planner/draw'
 import { exportJSON, exportPNG, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
@@ -627,21 +626,13 @@ export function Planner() {
   }, [withFloors, pushHistory])
 
   // ---------- этажи ----------
-  /** Переход на этаж: масштаб сохраняется, вид центрируется по лестнице */
+  /** Переход на этаж: область просмотра сохраняется как есть — в центре остаётся та же часть проекта */
   const switchFloorTo = useCallback(
     (id: string) => {
       const d = docRef.current
       if (id === d.currentFloorId) return
-      const nextDoc: PlannerDoc = { ...d, currentFloorId: id }
-      const scale = viewRef.current.scale
-      const anchor = viewAnchor(nextDoc, id) ?? roomCenter(currentFloor(nextDoc))
-      applyDoc(nextDoc)
+      applyDoc({ ...d, currentFloorId: id })
       clearSelection()
-      if (anchor) {
-        const { w, h } = sizeRef.current
-        viewRef.current = { scale, ox: w / 2 - anchor.x * scale, oy: h / 2 - anchor.y * scale }
-        userViewRef.current = true
-      }
       drawingPtsRef.current = null
       rulerRef.current = null
       draw()
