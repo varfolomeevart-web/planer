@@ -13,23 +13,40 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   BrickWall,
+  CopyPlus,
+  Eraser,
   FilePlus2,
   FileUp,
   FileDown,
+  Hand,
   ImageDown,
   ImagePlus,
-  Hand,
+  Layers,
   Maximize,
+  MoveHorizontal,
   MousePointer2,
   PencilLine,
+  Plus,
   Redo2,
+  Ruler,
+  Trash2,
   Undo2,
   ZoomIn,
   ZoomOut,
   CloudCheck,
   Sofa,
 } from 'lucide-react'
+import type { Floor, LayerVis, ObjLayer } from '@/lib/planner/types'
+import { LAYERS } from '@/lib/planner/types'
 import type { Tool } from '@/lib/planner/tools'
 import { cn } from '@/lib/utils'
 
@@ -50,12 +67,23 @@ interface Props {
   hasUnderlay: boolean
   onExportPNG: () => void
   onExportJSON: () => void
+  floors: Floor[]
+  currentFloorId: string
+  onSwitchFloor: (id: string) => void
+  onAddFloor: () => void
+  onCopyFloor: () => void
+  onDeleteFloor: () => void
+  layers: LayerVis
+  onToggleLayer: (id: ObjLayer) => void
 }
 
 const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; key: string }[] = [
   { id: 'select', label: 'Выбор', icon: MousePointer2, key: '1' },
   { id: 'wall', label: 'Стены', icon: PencilLine, key: '2' },
   { id: 'partition', label: 'Перегородки', icon: BrickWall, key: '3' },
+  { id: 'erase', label: 'Ластик', icon: Eraser, key: '5' },
+  { id: 'ruler', label: 'Рулетка', icon: Ruler, key: '6' },
+  { id: 'dimension', label: 'Размер', icon: MoveHorizontal, key: '7' },
   { id: 'pan', label: 'Рука', icon: Hand, key: '4' },
 ]
 
@@ -76,6 +104,14 @@ export function TopBar({
   hasUnderlay,
   onExportPNG,
   onExportJSON,
+  floors,
+  currentFloorId,
+  onSwitchFloor,
+  onAddFloor,
+  onCopyFloor,
+  onDeleteFloor,
+  layers,
+  onToggleLayer,
 }: Props) {
   return (
     <header className="z-20 flex shrink-0 flex-wrap items-center gap-2 border-b border-[#E7DECF] bg-[#FBF7EF]/95 px-3 py-2 sm:px-4">
@@ -92,6 +128,51 @@ export function TopBar({
 
       <div className="hidden h-7 w-px bg-[#E7DECF] md:block" />
 
+      {/* Этажи */}
+      <div className="flex items-center gap-1 rounded-xl bg-[#F1E9DA] p-1">
+        {floors.map((f, i) => (
+          <button
+            key={f.id}
+            onClick={() => onSwitchFloor(f.id)}
+            title={`Перейти на «${f.name}»`}
+            className={cn(
+              'max-w-28 truncate rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all',
+              f.id === currentFloorId
+                ? 'bg-[#E8730C] text-white shadow-sm'
+                : 'text-[#6B5D4F] hover:bg-[#E9DECB]',
+            )}
+          >
+            <span className="sm:hidden">{i + 1}</span>
+            <span className="hidden sm:inline">{f.name}</span>
+          </button>
+        ))}
+        <button
+          onClick={onAddFloor}
+          title="Добавить этаж (максимум 20)"
+          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden md:inline">Этаж</span>
+        </button>
+        <button
+          onClick={onCopyFloor}
+          title="Скопировать текущий этаж со всеми объектами"
+          className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
+        >
+          <CopyPlus className="h-4 w-4" />
+          <span className="hidden xl:inline">Копия</span>
+        </button>
+        {floors.length > 1 && (
+          <button
+            onClick={onDeleteFloor}
+            title="Удалить текущий этаж"
+            className="flex items-center rounded-lg px-2 py-1.5 text-xs font-semibold text-[#B3401E] transition-all hover:bg-[#F3DFD6]"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
       {/* Инструменты */}
       <div className="flex items-center gap-1 rounded-xl bg-[#F1E9DA] p-1">
         {TOOLS.map((t) => (
@@ -105,10 +186,38 @@ export function TopBar({
             )}
           >
             <t.icon className="h-4 w-4" />
-            <span className="hidden sm:inline">{t.label}</span>
+            <span className="hidden lg:inline">{t.label}</span>
           </button>
         ))}
       </div>
+
+      {/* Слои */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            title="Слои: вытяжка, вода, электрика"
+            className="flex items-center gap-1.5 rounded-xl bg-[#F1E9DA] px-2.5 py-2 text-xs font-semibold text-[#6B5D4F] transition-all hover:bg-[#E9DECB]"
+          >
+            <Layers className="h-4 w-4" />
+            <span className="hidden lg:inline">Слои</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="border-[#E7DECF] bg-[#FBF7EF]">
+          <DropdownMenuLabel className="text-xs text-[#8B7D6B]">Показывать на плане</DropdownMenuLabel>
+          <DropdownMenuSeparator className="bg-[#E7DECF]" />
+          {LAYERS.map((l) => (
+            <DropdownMenuCheckboxItem
+              key={l.id}
+              checked={layers[l.id]}
+              onCheckedChange={() => onToggleLayer(l.id)}
+              onSelect={(e) => e.preventDefault()}
+              className="text-xs text-[#3D3428] data-[highlighted]:bg-[#F1E9DA]"
+            >
+              {l.name}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* История и вид */}
       <div className="flex items-center gap-1">
@@ -165,7 +274,7 @@ export function TopBar({
             <AlertDialogHeader>
               <AlertDialogTitle className="text-[#3D3428]">Начать новый проект?</AlertDialogTitle>
               <AlertDialogDescription className="text-[#8B7D6B]">
-                Текущий план (стены и объекты) будет очищен. Действие можно отменить клавишами Ctrl+Z.
+                Текущий план (все этажи, стены и объекты) будет очищен. Действие можно отменить клавишами Ctrl+Z.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

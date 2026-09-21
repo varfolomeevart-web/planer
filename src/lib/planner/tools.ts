@@ -1,1 +1,1 @@
-export type Tool = 'select' | 'wall' | 'partition' | 'pan'
+export type Tool = 'select' | 'wall' | 'partition' | 'erase' | 'ruler' | 'dimension' | 'pan'

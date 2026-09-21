@@ -1,4 +1,4 @@
-import type { PlannerObject, Pt } from './types'
+import type { Floor, PlannerObject, Pt } from './types'
 
 export function dist(a: Pt, b: Pt): number {
   return Math.hypot(a.x - b.x, a.y - b.y)
@@ -156,4 +156,37 @@ export function rotateHandlePos(o: PlannerObject, screenOffsetCm: number): Pt {
     x: o.x - Math.sin(rad) * r,
     y: o.y - Math.cos(rad) * r,
   }
+}
+
+/** Все отрезки стен этажа: контур комнаты + сегменты перегородок */
+export function floorWallSegments(floor: Floor): [Pt, Pt][] {
+  const segs: [Pt, Pt][] = []
+  if (floor.room && floor.room.length >= 3) {
+    for (let i = 0; i < floor.room.length; i++) segs.push([floor.room[i], floor.room[(i + 1) % floor.room.length]])
+  }
+  for (const part of floor.partitions) {
+    for (let i = 0; i < part.pts.length - 1; i++) segs.push([part.pts[i], part.pts[i + 1]])
+  }
+  return segs
+}
+
+export interface WallHit {
+  pt: Pt
+  /** угол отрезка в градусах, нормализован в [-180, 180) */
+  ang: number
+  dist: number
+}
+
+/** Ближайшая точка на стенах этажа (для привязки дверей и окон) */
+export function nearestWall(floor: Floor, p: Pt, maxDist: number): WallHit | null {
+  let best: WallHit | null = null
+  for (const [a, b] of floorWallSegments(floor)) {
+    const c = closestOnSegment(p, a, b)
+    const d = Math.hypot(c.x - p.x, c.y - p.y)
+    if (d <= maxDist && (!best || d < best.dist)) {
+      const ang = ((((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) + 180) % 360 + 360) % 360 - 180
+      best = { pt: c, ang, dist: d }
+    }
+  }
+  return best
 }

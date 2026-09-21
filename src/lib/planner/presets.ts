@@ -1,3 +1,5 @@
+import type { ObjLayer } from './types'
+
 export interface Preset {
   id: string
   name: string
@@ -6,6 +8,10 @@ export interface Preset {
   w: number
   h: number
   color: string
+  /** инженерный слой */
+  layer?: ObjLayer
+  /** лестница: пунктир на своём этаже, целиком — выше */
+  showNext?: boolean
 }
 
 export const CATEGORIES = [
@@ -13,6 +19,11 @@ export const CATEGORIES = [
   { id: 'bedroom', name: 'Спальня' },
   { id: 'kitchen', name: 'Кухня' },
   { id: 'bath', name: 'Санузел' },
+  { id: 'cafe', name: 'Кафе' },
+  { id: 'stairs', name: 'Лестницы' },
+  { id: 'doors', name: 'Двери' },
+  { id: 'windows', name: 'Окна' },
+  { id: 'eng', name: 'Инженерия' },
   { id: 'misc', name: 'Разное' },
 ] as const
 
@@ -38,12 +49,36 @@ export const PRESETS: Preset[] = [
   { id: 'fridge', name: 'Холодильник', category: 'kitchen', w: 60, h: 65, color: '#D8D5D0' },
   { id: 'stove', name: 'Плита', category: 'kitchen', w: 60, h: 60, color: '#D8D5D0' },
   { id: 'sink_cab', name: 'Мойка', category: 'kitchen', w: 60, h: 60, color: '#D8D5D0' },
-  // Санузел
-  { id: 'bathtub', name: 'Ванна', category: 'bath', w: 170, h: 75, color: '#F0EEE8' },
-  { id: 'shower', name: 'Душевая кабина', category: 'bath', w: 90, h: 90, color: '#D8E2E0' },
-  { id: 'toilet', name: 'Унитаз', category: 'bath', w: 40, h: 65, color: '#F0EEE8' },
-  { id: 'washbasin', name: 'Раковина', category: 'bath', w: 60, h: 45, color: '#F0EEE8' },
-  { id: 'washer', name: 'Стиральная машина', category: 'bath', w: 60, h: 60, color: '#D8D5D0' },
+  // Кафе
+  { id: 'cafe_table2', name: 'Столик на 2', category: 'cafe', w: 70, h: 70, color: '#EDE3D3' },
+  { id: 'cafe_table4', name: 'Столик на 4', category: 'cafe', w: 110, h: 80, color: '#EDE3D3' },
+  { id: 'bar_counter', name: 'Барная стойка', category: 'cafe', w: 220, h: 60, color: '#C9A87E' },
+  { id: 'coffee_machine', name: 'Кофемашина', category: 'cafe', w: 45, h: 40, color: '#D8D5D0' },
+  { id: 'cashbox', name: 'Касса', category: 'cafe', w: 80, h: 60, color: '#DDBB8B' },
+  { id: 'display_fridge', name: 'Витрина', category: 'cafe', w: 120, h: 70, color: '#D8E2E0' },
+  { id: 'dishwasher', name: 'Посудомоечная машина', category: 'cafe', w: 60, h: 60, color: '#D8D5D0' },
+  // Лестницы
+  { id: 'stairs_straight', name: 'Лестница прямая', category: 'stairs', w: 100, h: 280, color: '#EAD9B0', showNext: true },
+  { id: 'stairs_l', name: 'Лестница Г-обр.', category: 'stairs', w: 230, h: 250, color: '#EAD9B0', showNext: true },
+  // Двери
+  { id: 'door_single', name: 'Дверь 80 см', category: 'doors', w: 80, h: 12, color: '#F5EFE3' },
+  { id: 'door_double', name: 'Дверь 140 см', category: 'doors', w: 140, h: 12, color: '#F5EFE3' },
+  { id: 'door_sliding', name: 'Дверь раздвижная', category: 'doors', w: 90, h: 12, color: '#F5EFE3' },
+  // Окна
+  { id: 'window_120', name: 'Окно 120 см', category: 'windows', w: 120, h: 14, color: '#D7E5EC' },
+  { id: 'window_180', name: 'Окно 180 см', category: 'windows', w: 180, h: 14, color: '#D7E5EC' },
+  // Инженерия: вытяжка/вентиляция
+  { id: 'hood', name: 'Вытяжка', category: 'eng', w: 60, h: 60, color: '#E3E6E8', layer: 'vent' },
+  { id: 'vent_channel', name: 'Вентканал', category: 'eng', w: 40, h: 40, color: '#E3E6E8', layer: 'vent' },
+  // Инженерия: вода
+  { id: 'water_riser', name: 'Стояк воды', category: 'eng', w: 30, h: 30, color: '#CBDDE8', layer: 'water' },
+  { id: 'water_pipe', name: 'Труба воды', category: 'eng', w: 120, h: 10, color: '#CBDDE8', layer: 'water' },
+  { id: 'sewer_pipe', name: 'Канализация', category: 'eng', w: 120, h: 10, color: '#D8CBB6', layer: 'water' },
+  // Инженерия: электрика
+  { id: 'socket', name: 'Розетка', category: 'eng', w: 16, h: 16, color: '#F0E8C8', layer: 'electric' },
+  { id: 'switch', name: 'Выключатель', category: 'eng', w: 16, h: 16, color: '#F0E8C8', layer: 'electric' },
+  { id: 'lamp', name: 'Светильник', category: 'eng', w: 36, h: 36, color: '#F5EFD8', layer: 'electric' },
+  { id: 'panel_el', name: 'Электрощиток', category: 'eng', w: 40, h: 60, color: '#F0E8C8', layer: 'electric' },
   // Разное
   { id: 'plant', name: 'Растение', category: 'misc', w: 40, h: 40, color: '#C7D2BB' },
   { id: 'custom', name: 'Свой объект', category: 'misc', w: 100, h: 80, color: '#EDE3D3' },
@@ -51,4 +86,9 @@ export const PRESETS: Preset[] = [
 
 export function getPreset(id: string): Preset {
   return PRESETS.find((p) => p.id === id) ?? PRESETS[PRESETS.length - 1]
+}
+
+/** Двери и окна привязываются к стенам */
+export function isDoorWindowPreset(presetId: string): boolean {
+  return presetId.startsWith('door') || presetId.startsWith('window')
 }

@@ -1,4 +1,6 @@
-import type { Partition, PlannerDoc, PlannerObject, Pt, Underlay } from './types'
+import type { Dimension, LayerVis, Partition, PlannerDoc, PlannerObject, Pt, Underlay } from './types'
+import { DEFAULT_LAYERS } from './types'
+import { isStairs } from './floors'
 import { rotateHandlePos } from './geometry'
 
 export const COLORS = {
@@ -10,6 +12,7 @@ export const COLORS = {
   accent: '#E8730C',
   accentDark: '#C55F05',
   text: '#6B5D4F',
+  dim: '#8B7D6B',
   detail: 'rgba(93, 78, 60, 0.75)',
   detailStrong: 'rgba(93, 78, 60, 0.9)',
 }
@@ -29,7 +32,13 @@ export interface DrawUI {
   /** перетаскиваемый узел выбранной перегородки */
   draggingPartitionVertex: number | null
   /** что рисуется инструментом-карандашом */
-  drawingMode: 'room' | 'partition'
+  drawingMode: 'room' | 'partition' | 'dimension'
+  /** видимость слоёв */
+  layers: LayerVis
+  /** выделенная выноска-размер */
+  selectedDimensionId: string | null
+  /** рулетка: текущий замер */
+  ruler: { a: Pt; b: Pt } | null
   /** вызывается, когда картинка подложки догрузилась — для перерисовки */
   onImageLoad?: () => void
 }
@@ -86,8 +95,8 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 }
 
 /**
- * Рисует глиф мебели в локальных координатах (центр 0,0).
- * Контекст уже перенесён/повёрнут; внутри применяется scale.
+ * Рисует глиф мебели в локальных координатах (центр 0,0), единицы — сантиметры.
+ * Контекст уже перенесён/повёрнут; внутри применяется scale (px→см).
  */
 export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color: string, w: number, h: number, scale: number) {
   const lw = 1.4 / scale
@@ -104,6 +113,14 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
 
   const base = (r = 3) => {
     roundRectPath(ctx, -hw, -hh, w, h, r)
+    ctx.fill()
+    ctx.stroke()
+  }
+
+  /** белый прямоугольник — «проём» в стене (двери и окна) */
+  const opening = () => {
+    roundRectPath(ctx, -hw, -hh, w, h, 1)
+    ctx.fillStyle = '#FFFFFF'
     ctx.fill()
     ctx.stroke()
   }
@@ -352,6 +369,350 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
       ctx.strokeRect(-hw + 6, -hh + 4, w - 12, 7)
       break
     }
+    // ---------- Кафе ----------
+    case 'cafe_table2': {
+      // стол
+      roundRectPath(ctx, -27, -20, 54, 40, 4)
+      ctx.fill()
+      ctx.stroke()
+      // два стула
+      ctx.lineWidth = lw2
+      for (const dy of [-32, 20]) {
+        roundRectPath(ctx, -13, dy, 26, 12, 3)
+        ctx.fill()
+        ctx.stroke()
+      }
+      break
+    }
+    case 'cafe_table4': {
+      roundRectPath(ctx, -35, -25, 70, 50, 4)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      for (const dy of [-37, 25]) {
+        roundRectPath(ctx, -13, dy, 26, 12, 3)
+        ctx.fill()
+        ctx.stroke()
+      }
+      for (const dx of [-47, 35]) {
+        roundRectPath(ctx, dx, -12, 12, 24, 3)
+        ctx.fill()
+        ctx.stroke()
+      }
+      break
+    }
+    case 'bar_counter': {
+      base(4)
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw + 8, -hh + 14)
+      ctx.lineTo(hw - 8, -hh + 14)
+      ctx.stroke()
+      // барные стулья
+      for (const dx of [-hw * 0.55, 0, hw * 0.55]) {
+        ctx.beginPath()
+        ctx.arc(dx, hh - 14, 9, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      break
+    }
+    case 'coffee_machine':
+      base(3)
+      ctx.lineWidth = lw2
+      ctx.strokeRect(-hw + 8, -hh + 5, w - 16, 10)
+      ctx.strokeRect(-5, -2, 10, 12)
+      break
+    case 'cashbox':
+      base(3)
+      ctx.lineWidth = lw2
+      ctx.strokeRect(-hw + 10, -hh + 8, w - 20, h * 0.35)
+      ctx.beginPath()
+      ctx.moveTo(-hw + 10, hh - 12)
+      ctx.lineTo(hw - 10, hh - 12)
+      ctx.stroke()
+      break
+    case 'display_fridge':
+      base(3)
+      ctx.lineWidth = lw2
+      ctx.strokeRect(-hw + 7, -hh + 7, w - 14, h - 14)
+      for (const dx of [-hw + w * 0.38, -hw + w * 0.66]) {
+        ctx.beginPath()
+        ctx.moveTo(dx, -hh + 7)
+        ctx.lineTo(dx, hh - 7)
+        ctx.stroke()
+      }
+      break
+    case 'dishwasher':
+      base(4)
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw, -hh + Math.min(12, h * 0.2))
+      ctx.lineTo(hw, -hh + Math.min(12, h * 0.2))
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(0, 4, min * 0.26, 0, Math.PI * 2)
+      ctx.stroke()
+      break
+    // ---------- Лестницы ----------
+    case 'stairs':
+    case 'stairs_straight': {
+      base(2)
+      ctx.lineWidth = lw2
+      // ступени каждые 25 см
+      const n = Math.max(2, Math.round(h / 25))
+      for (let i = 1; i < n; i++) {
+        const y = -hh + (h / n) * i
+        ctx.beginPath()
+        ctx.moveTo(-hw + 3, y)
+        ctx.lineTo(hw - 3, y)
+        ctx.stroke()
+      }
+      // стрелка направления подъёма
+      ctx.lineWidth = Math.max(1.6, 2.4 / scale)
+      ctx.strokeStyle = COLORS.detailStrong
+      ctx.beginPath()
+      ctx.moveTo(0, hh - 12)
+      ctx.lineTo(0, -hh + 20)
+      ctx.moveTo(-8, -hh + 30)
+      ctx.lineTo(0, -hh + 20)
+      ctx.lineTo(8, -hh + 30)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(0, hh - 12, 4, 0, Math.PI * 2)
+      ctx.stroke()
+      break
+    }
+    case 'stairs_l': {
+      // Г-образная: контур буквой L
+      const run = Math.min(100, w * 0.45, h * 0.45)
+      ctx.beginPath()
+      ctx.moveTo(-hw, -hh)
+      ctx.lineTo(hw, -hh)
+      ctx.lineTo(hw, -hh + run)
+      ctx.lineTo(-hw + run, -hh + run)
+      ctx.lineTo(-hw + run, hh)
+      ctx.lineTo(-hw, hh)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      // ступени в вертикальном марше (левый столб)
+      const nV = Math.max(2, Math.round((h - run) / 25))
+      for (let i = 1; i <= nV; i++) {
+        const y = -hh + run + ((h - run) / nV) * i
+        ctx.beginPath()
+        ctx.moveTo(-hw + 3, y)
+        ctx.lineTo(-hw + run - 3, y)
+        ctx.stroke()
+      }
+      // ступени в горизонтальном марше (верхний ряд)
+      const nH = Math.max(2, Math.round((w - run) / 25))
+      for (let i = 1; i <= nH; i++) {
+        const x = -hw + run + ((w - run) / nH) * i
+        ctx.beginPath()
+        ctx.moveTo(x, -hh + 3)
+        ctx.lineTo(x, -hh + run - 3)
+        ctx.stroke()
+      }
+      // стрелка: вверх по левому маршу, поворот направо
+      ctx.lineWidth = Math.max(1.6, 2.4 / scale)
+      ctx.strokeStyle = COLORS.detailStrong
+      const mx = -hw + run / 2
+      const my = -hh + run / 2
+      ctx.beginPath()
+      ctx.moveTo(mx, hh - 12)
+      ctx.lineTo(mx, my)
+      ctx.lineTo(hw - 22, my)
+      ctx.moveTo(hw - 32, my - 8)
+      ctx.lineTo(hw - 22, my)
+      ctx.lineTo(hw - 32, my + 8)
+      ctx.stroke()
+      break
+    }
+    // ---------- Двери ----------
+    case 'door':
+    case 'door_single': {
+      opening()
+      // полотно (открыто на 90°) и дуга открывания
+      ctx.lineWidth = 4
+      ctx.strokeStyle = COLORS.detailStrong
+      ctx.beginPath()
+      ctx.moveTo(-hw, 0)
+      ctx.lineTo(-hw, -w)
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.setLineDash([6 / scale, 4 / scale])
+      ctx.beginPath()
+      ctx.arc(-hw, 0, w, -Math.PI / 2, 0)
+      ctx.stroke()
+      ctx.setLineDash([])
+      break
+    }
+    case 'door_double': {
+      opening()
+      const L = w / 2
+      ctx.lineWidth = 4
+      ctx.strokeStyle = COLORS.detailStrong
+      ctx.beginPath()
+      ctx.moveTo(-hw, 0)
+      ctx.lineTo(-hw, -L)
+      ctx.moveTo(hw, 0)
+      ctx.lineTo(hw, -L)
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.setLineDash([6 / scale, 4 / scale])
+      ctx.beginPath()
+      ctx.arc(-hw, 0, L, -Math.PI / 2, 0)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(hw, 0, L, -Math.PI / 2, Math.PI, true)
+      ctx.stroke()
+      ctx.setLineDash([])
+      break
+    }
+    case 'door_sliding': {
+      opening()
+      ctx.lineWidth = 4
+      ctx.strokeStyle = COLORS.detailStrong
+      ctx.beginPath()
+      ctx.moveTo(-hw + 2, -hh + 1)
+      ctx.lineTo(-2, -hh + 1)
+      ctx.moveTo(2, hh - 1)
+      ctx.lineTo(hw - 2, hh - 1)
+      ctx.stroke()
+      break
+    }
+    // ---------- Окна ----------
+    case 'window':
+    case 'window_120':
+    case 'window_180': {
+      opening()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw, 0)
+      ctx.lineTo(hw, 0)
+      ctx.moveTo(-hw, -hh * 0.45)
+      ctx.lineTo(hw, -hh * 0.45)
+      ctx.moveTo(-hw, hh * 0.45)
+      ctx.lineTo(hw, hh * 0.45)
+      ctx.stroke()
+      break
+    }
+    // ---------- Инженерия: вентиляция ----------
+    case 'hood': {
+      base(3)
+      ctx.lineWidth = lw2
+      const r = min * 0.34
+      ctx.beginPath()
+      ctx.arc(0, 0, r, 0, Math.PI * 2)
+      ctx.stroke()
+      // лопасти вентилятора
+      for (let i = 0; i < 3; i++) {
+        const a = (Math.PI * 2 * i) / 3
+        ctx.beginPath()
+        ctx.arc(Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.45, r * 0.32, a, a + Math.PI * 0.9)
+        ctx.stroke()
+      }
+      break
+    }
+    case 'vent_channel': {
+      base(2)
+      ctx.lineWidth = lw2
+      for (let i = 1; i <= 3; i++) {
+        const off = (-hh + (h / 4) * i)
+        ctx.beginPath()
+        ctx.moveTo(-hw + 4, off + 5)
+        ctx.lineTo(hw - 4, off - 5)
+        ctx.stroke()
+      }
+      break
+    }
+    // ---------- Инженерия: вода ----------
+    case 'water_riser':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.arc(0, 0, hw * 0.45, 0, Math.PI * 2)
+      ctx.fillStyle = COLORS.detailStrong
+      ctx.fill()
+      break
+    case 'water_pipe':
+    case 'sewer_pipe': {
+      base(3)
+      ctx.lineWidth = lw2
+      ctx.setLineDash(presetId === 'sewer_pipe' ? [8 / scale, 5 / scale] : [3 / scale, 3 / scale])
+      ctx.beginPath()
+      ctx.moveTo(-hw + 6, 0)
+      ctx.lineTo(hw - 6, 0)
+      ctx.stroke()
+      ctx.setLineDash([])
+      // соединительные муфты
+      const mr = Math.min(6, h * 0.4)
+      ctx.beginPath()
+      ctx.arc(-hw + 10, 0, mr, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(hw - 10, 0, mr, 0, Math.PI * 2)
+      ctx.stroke()
+      break
+    }
+    // ---------- Инженерия: электрика ----------
+    case 'socket':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      for (const dx of [-hw * 0.35, hw * 0.35]) {
+        ctx.beginPath()
+        ctx.arc(dx, 0, Math.max(1.2, hw * 0.14), 0, Math.PI * 2)
+        ctx.fillStyle = COLORS.detailStrong
+        ctx.fill()
+      }
+      break
+    case 'switch':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.4, hw * 0.4)
+      ctx.lineTo(hw * 0.35, -hw * 0.35)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(hw * 0.35, -hw * 0.35, Math.max(1.2, hw * 0.16), 0, Math.PI * 2)
+      ctx.fillStyle = COLORS.detailStrong
+      ctx.fill()
+      break
+    case 'lamp':
+      ctx.beginPath()
+      ctx.arc(0, 0, hw, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+      ctx.lineWidth = lw2
+      ctx.beginPath()
+      ctx.moveTo(-hw * 0.45, -hw * 0.45)
+      ctx.lineTo(hw * 0.45, hw * 0.45)
+      ctx.moveTo(hw * 0.45, -hw * 0.45)
+      ctx.lineTo(-hw * 0.45, hw * 0.45)
+      ctx.stroke()
+      break
+    case 'panel_el': {
+      base(2)
+      ctx.lineWidth = Math.max(1.6, 2 / scale)
+      ctx.strokeStyle = COLORS.detailStrong
+      ctx.beginPath()
+      ctx.moveTo(2, -hh + 8)
+      ctx.lineTo(-6, -2)
+      ctx.lineTo(3, -2)
+      ctx.lineTo(-4, hh - 8)
+      ctx.stroke()
+      break
+    }
     case 'plant':
       ctx.beginPath()
       ctx.arc(0, 0, min / 2, 0, Math.PI * 2)
@@ -382,6 +743,7 @@ function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { sca
   ctx.save()
   ctx.translate(sx, sy)
   ctx.rotate((o.angle * Math.PI) / 180)
+  if (o.flip) ctx.scale(-1, 1)
   if (selected) {
     ctx.save()
     ctx.shadowColor = 'rgba(232, 115, 12, 0.55)'
@@ -403,6 +765,48 @@ function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { sca
     ctx.restore()
   }
   ctx.restore()
+}
+
+/** Призрак лестницы на своём этаже: пунктирный контур со ступенями */
+function drawStairsGhost(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { scale: number; ox: number; oy: number }) {
+  const wpx = o.w * view.scale
+  const hpx = o.h * view.scale
+  const cx = o.x * view.scale + view.ox
+  const cy = o.y * view.scale + view.oy
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate((o.angle * Math.PI) / 180)
+  ctx.globalAlpha = 0.75
+  ctx.strokeStyle = COLORS.accentDark
+  ctx.lineWidth = 1.7
+  ctx.setLineDash([7, 5])
+  roundRectPath(ctx, -wpx / 2, -hpx / 2, wpx, hpx, 4)
+  ctx.stroke()
+  ctx.setLineDash([])
+  // ступени
+  const stepPx = 25 * view.scale
+  const alongW = o.h >= o.w
+  if (stepPx >= 7) {
+    ctx.lineWidth = 1
+    ctx.globalAlpha = 0.45
+    ctx.beginPath()
+    if (alongW) {
+      for (let y = -hpx / 2 + stepPx; y < hpx / 2 - 2; y += stepPx) {
+        ctx.moveTo(-wpx / 2 + 2, y)
+        ctx.lineTo(wpx / 2 - 2, y)
+      }
+    } else {
+      for (let x = -wpx / 2 + stepPx; x < wpx / 2 - 2; x += stepPx) {
+        ctx.moveTo(x, -hpx / 2 + 2)
+        ctx.lineTo(x, hpx / 2 - 2)
+      }
+    }
+    ctx.stroke()
+  }
+  ctx.restore()
+  // подпись под призраком
+  const r = (Math.hypot(o.w, o.h) / 2) * view.scale
+  drawLabel(ctx, 'Лестница', cx, cy + r + 14, { accent: true })
 }
 
 /** Внутренние стены-перегородки: полилинии + длины сегментов */
@@ -451,6 +855,44 @@ function drawPartitions(
       drawLabel(ctx, fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), (ax + bx) / 2 + nx, (ay + by) / 2 + ny)
     }
   }
+}
+
+/** Выноска-размер */
+function drawDimension(ctx: CanvasRenderingContext2D, d: Dimension, view: { scale: number; ox: number; oy: number }, selected: boolean) {
+  const ax = d.a.x * view.scale + view.ox
+  const ay = d.a.y * view.scale + view.oy
+  const bx = d.b.x * view.scale + view.ox
+  const by = d.b.y * view.scale + view.oy
+  const ang = Math.atan2(by - ay, bx - ax)
+  const nx = Math.cos(ang + Math.PI / 2)
+  const ny = Math.sin(ang + Math.PI / 2)
+  ctx.save()
+  ctx.strokeStyle = selected ? COLORS.accentDark : COLORS.dim
+  ctx.lineWidth = selected ? 2 : 1.5
+  ctx.beginPath()
+  ctx.moveTo(ax, ay)
+  ctx.lineTo(bx, by)
+  // засечки на концах
+  ctx.moveTo(ax - nx * 6, ay - ny * 6)
+  ctx.lineTo(ax + nx * 6, ay + ny * 6)
+  ctx.moveTo(bx - nx * 6, by - ny * 6)
+  ctx.lineTo(bx + nx * 6, by + ny * 6)
+  ctx.stroke()
+  // точки
+  for (const [x, y] of [
+    [ax, ay],
+    [bx, by],
+  ]) {
+    ctx.beginPath()
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2)
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fill()
+    ctx.lineWidth = 1.6
+    ctx.stroke()
+  }
+  ctx.restore()
+  const len = Math.hypot(d.b.x - d.a.x, d.b.y - d.a.y)
+  drawLabel(ctx, fmtLen(len), (ax + bx) / 2 + nx * 14, (ay + by) / 2 + ny * 14, { accent: selected })
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, doc: PlannerDoc, view: { scale: number; ox: number; oy: number }) {
@@ -601,12 +1043,18 @@ export function drawScene(
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, cssW, cssH)
 
-  const hasRoom = !!(doc.room && doc.room.length >= 3)
-  const hasUnderlay = !!(doc.underlay && doc.underlay.visible)
+  const floor = doc.floors.find((f) => f.id === doc.currentFloorId) ?? doc.floors[0]
+  if (!floor) return
+  const floorIdx = doc.floors.indexOf(floor)
+  const vis: LayerVis = { ...DEFAULT_LAYERS, ...(doc.layers ?? {}) }
+  const layerOn = (o: PlannerObject) => vis[o.layer ?? 'furniture']
+
+  const hasRoom = !!(floor.room && floor.room.length >= 3)
+  const hasUnderlay = !!(floor.underlay && floor.underlay.visible)
 
   // Порядок слоёв при подложке: заливка комнаты → подложка → сетка → стены
   if (hasUnderlay && hasRoom) {
-    pathPolygon(ctx, doc.room!, view)
+    pathPolygon(ctx, floor.room!, view)
     ctx.closePath()
     ctx.save()
     ctx.shadowColor = 'rgba(74, 64, 54, 0.12)'
@@ -616,13 +1064,13 @@ export function drawScene(
     ctx.restore()
   }
 
-  if (hasUnderlay && doc.underlay) drawUnderlay(ctx, doc.underlay, view, ui)
+  if (hasUnderlay && floor.underlay) drawUnderlay(ctx, floor.underlay, view, ui)
 
   if (ui.showGrid) drawGrid(ctx, cssW, cssH, doc, view)
 
   // Комната
-  if (hasRoom && doc.room) {
-    pathPolygon(ctx, doc.room, view)
+  if (hasRoom && floor.room) {
+    pathPolygon(ctx, floor.room, view)
     ctx.closePath()
     if (!hasUnderlay) {
       ctx.save()
@@ -638,10 +1086,10 @@ export function drawScene(
     ctx.stroke()
 
     // длины стен
-    const n = doc.room.length
+    const n = floor.room.length
     for (let i = 0; i < n; i++) {
-      const a = doc.room[i]
-      const b = doc.room[(i + 1) % n]
+      const a = floor.room[i]
+      const b = floor.room[(i + 1) % n]
       const ax = a.x * view.scale + view.ox
       const ay = a.y * view.scale + view.oy
       const bx = b.x * view.scale + view.ox
@@ -658,14 +1106,33 @@ export function drawScene(
   }
 
   // Перегородки
-  if (doc.partitions.length > 0) drawPartitions(ctx, doc.partitions, view, ui)
+  if (floor.partitions.length > 0) drawPartitions(ctx, floor.partitions, view, ui)
 
-  // Объекты
-  for (const o of doc.objects) {
+  // Лестницы с нижних этажей — целиком
+  for (let i = 0; i < floorIdx; i++) {
+    for (const o of doc.floors[i].objects) {
+      if (isStairs(o) && layerOn(o)) drawObject(ctx, o, view, false)
+    }
+  }
+
+  // Призраки лестниц текущего этажа (пунктир) — под объектами
+  for (const o of floor.objects) {
+    if (isStairs(o)) drawStairsGhost(ctx, o, view)
+  }
+
+  // Объекты текущего этажа (лестницы уже нарисованы пунктиром)
+  for (const o of floor.objects) {
+    if (isStairs(o)) continue
+    if (!layerOn(o)) continue
     drawObject(ctx, o, view, o.id === ui.selectedId)
   }
 
-  // Рисование стен/перегородок в процессе
+  // Выноски-размеры
+  for (const d of floor.dimensions) {
+    drawDimension(ctx, d, view, d.id === ui.selectedDimensionId)
+  }
+
+  // Рисование стен/перегородок/размера в процессе
   if (ui.drawingPts && ui.drawingPts.length > 0) {
     const pts = ui.drawingPts
     const isPartition = ui.drawingMode === 'partition'
@@ -682,7 +1149,7 @@ export function drawScene(
       ctx.moveTo(last.x * view.scale + view.ox, last.y * view.scale + view.oy)
       ctx.lineTo(ui.cursor.x * view.scale + view.ox, ui.cursor.y * view.scale + view.oy)
       ctx.stroke()
-      if (pts.length >= 2) {
+      if (pts.length >= 1) {
         drawLabel(ctx, fmtLen(Math.hypot(ui.cursor.x - last.x, ui.cursor.y - last.y)), (last.x * view.scale + view.ox + ui.cursor.x * view.scale + view.ox) / 2, (last.y * view.scale + view.oy + ui.cursor.y * view.scale + view.oy) / 2, { accent: true })
       }
     }
@@ -696,7 +1163,11 @@ export function drawScene(
       const x = p.x * view.scale + view.ox
       const y = p.y * view.scale + view.oy
       const near = !!ui.cursor && Math.hypot(ui.cursor.x - p.x, ui.cursor.y - p.y) * view.scale < 12
-      const closable = isPartition ? i === pts.length - 1 && pts.length >= 2 && near : i === 0 && pts.length >= 3 && near
+      const closable = isPartition
+        ? i === pts.length - 1 && pts.length >= 2 && near
+        : ui.drawingMode === 'room'
+          ? i === 0 && pts.length >= 3 && near
+          : false
       ctx.beginPath()
       ctx.arc(x, y, closable ? 9 : 6, 0, Math.PI * 2)
       ctx.fillStyle = closable ? COLORS.accent : '#FFFFFF'
@@ -709,8 +1180,8 @@ export function drawScene(
   }
 
   // Ручки вершин комнаты
-  if (ui.showVertexHandles && doc.room && !ui.drawingPts) {
-    doc.room.forEach((p, i) => {
+  if (ui.showVertexHandles && floor.room && !ui.drawingPts) {
+    floor.room.forEach((p, i) => {
       const x = p.x * view.scale + view.ox
       const y = p.y * view.scale + view.oy
       const active = ui.draggingVertex === i
@@ -726,7 +1197,7 @@ export function drawScene(
 
   // Ручки вершин выбранной перегородки
   if (ui.selectedPartitionId && !ui.drawingPts) {
-    const part = doc.partitions.find((p) => p.id === ui.selectedPartitionId)
+    const part = floor.partitions.find((p) => p.id === ui.selectedPartitionId)
     if (part) {
       part.pts.forEach((p, i) => {
         const x = p.x * view.scale + view.ox
@@ -743,8 +1214,8 @@ export function drawScene(
     }
   }
 
-  // Ручка поворота выбранного объекта
-  const sel = doc.objects.find((o) => o.id === ui.selectedId)
+  // Ручка поворота выбранного объекта (только если его слой виден)
+  const sel = floor.objects.find((o) => o.id === ui.selectedId && (vis[o.layer ?? 'furniture'] || isStairs(o)))
   if (sel) {
     const handleOffsetCm = 26 / view.scale
     const hp = rotateHandlePos(sel, handleOffsetCm)
@@ -776,6 +1247,37 @@ export function drawScene(
     ctx.globalAlpha = 0.55
     drawObject(ctx, ui.ghost, view, false)
     ctx.restore()
+  }
+
+  // Рулетка
+  if (ui.ruler) {
+    const { a, b } = ui.ruler
+    const ax = a.x * view.scale + view.ox
+    const ay = a.y * view.scale + view.oy
+    const bx = b.x * view.scale + view.ox
+    const by = b.y * view.scale + view.oy
+    ctx.save()
+    ctx.strokeStyle = COLORS.accent
+    ctx.lineWidth = 2
+    ctx.setLineDash([9, 6])
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(bx, by)
+    ctx.stroke()
+    ctx.setLineDash([])
+    for (const [x, y] of [
+      [ax, ay],
+      [bx, by],
+    ]) {
+      ctx.beginPath()
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2)
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+    ctx.restore()
+    drawLabel(ctx, fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), (ax + bx) / 2, (ay + by) / 2 - 16, { accent: true })
   }
 
   drawScaleBar(ctx, cssW, cssH, view.scale)

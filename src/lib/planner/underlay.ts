@@ -1,4 +1,5 @@
 import type { PlannerDoc, Underlay, View } from './types'
+import { currentFloor } from './types'
 import { objectsBBox, pointsBBox, screenToPlan, unionBBox } from './geometry'
 
 /** Максимальный размер изображения-подложки по большей стороне, px (экономия localStorage) */
@@ -64,7 +65,8 @@ export function computeUnderlayPlacement(
   size: { w: number; h: number },
   view: View,
 ): { x: number; y: number; w: number; h: number } {
-  const bbox = unionBBox(doc.room && doc.room.length >= 3 ? pointsBBox(doc.room) : null, objectsBBox(doc.objects))
+  const fl = currentFloor(doc)
+  const bbox = unionBBox(fl.room && fl.room.length >= 3 ? pointsBBox(fl.room) : null, objectsBBox(fl.objects))
   let tw: number
   let th: number
   let cx: number
@@ -112,13 +114,25 @@ export function packDocForHistory(doc: PlannerDoc): string {
   })
 }
 
-/** Обратная распаковка снапшота истории */
+/** Обратная распаковка снапшота истории: восстанавливаем data URL подложек во всех этажах */
 export function unpackDocFromHistory(raw: string): PlannerDoc {
   const doc = JSON.parse(raw) as PlannerDoc
-  const u = doc?.underlay as Underlay | null
-  if (u && typeof u.src === 'string' && u.src.startsWith('@@src#')) {
-    const src = tokenToSrc.get(u.src)
-    doc.underlay = src ? { ...u, src } : null
+  const fix = (u: Underlay | null): Underlay | null => {
+    if (u && typeof u.src === 'string' && u.src.startsWith('@@src#')) {
+      const src = tokenToSrc.get(u.src)
+      return src ? { ...u, src } : null
+    }
+    return u
+  }
+  if (Array.isArray(doc?.floors)) {
+    for (const f of doc.floors) f.underlay = fix(f.underlay ?? null)
+  }
+  if (doc && 'underlay' in doc) {
+    // на случай старых снапшотов с подложкой верхнего уровня
+    const legacy = fix((doc as unknown as { underlay: Underlay | null }).underlay)
+    if (legacy && Array.isArray(doc.floors) && doc.floors[0] && !doc.floors[0].underlay) {
+      doc.floors[0].underlay = legacy
+    }
   }
   return doc
 }

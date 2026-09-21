@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Partition, PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
+import type { Dimension, Floor, Partition, PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
 import { GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
 import { fmtLen } from '@/lib/planner/draw'
@@ -10,21 +10,25 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace } from 'lucide-react'
+import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace, FlipHorizontal, Ruler } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
   doc: PlannerDoc
+  floor: Floor
   showGrid: boolean
   selected: PlannerObject | null
   selectedPartition: Partition | null
+  selectedDimension: Dimension | null
   underlay: Underlay | null
   underlaySelected: boolean
   onUpdateObject: (id: string, patch: Partial<PlannerObject>) => void
+  onMirrorObject: (id: string) => void
   onCommit: () => void
   onDeleteObject: (id: string) => void
   onDuplicateObject: (id: string) => void
   onDeletePartition: (id: string) => void
+  onDeleteDimension: (id: string) => void
   onClearRoom: () => void
   onSelectUnderlay: () => void
   onUpdateUnderlay: (patch: Partial<Underlay>) => void
@@ -97,16 +101,20 @@ function NumberField({
 
 export function PropertiesPanel({
   doc,
+  floor,
   showGrid,
   selected,
   selectedPartition,
+  selectedDimension,
   underlay,
   underlaySelected,
   onUpdateObject,
+  onMirrorObject,
   onCommit,
   onDeleteObject,
   onDuplicateObject,
   onDeletePartition,
+  onDeleteDimension,
   onClearRoom,
   onSelectUnderlay,
   onUpdateUnderlay,
@@ -116,18 +124,19 @@ export function PropertiesPanel({
   onGridStepChange,
   onToggleGrid,
 }: Props) {
-  const room = doc.room && doc.room.length >= 3 ? doc.room : null
+  const room = floor.room && floor.room.length >= 3 ? floor.room : null
   const area = room ? polygonArea(room) : 0
   const perim = room ? polygonPerimeter(room) : 0
   const partLen = selectedPartition
     ? selectedPartition.pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - selectedPartition.pts[i].x, p.y - selectedPartition.pts[i].y), 0)
     : 0
+  const dimLen = selectedDimension ? Math.hypot(selectedDimension.b.x - selectedDimension.a.x, selectedDimension.b.y - selectedDimension.a.y) : 0
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto planner-scroll">
       {/* Помещение */}
       <div className="border-b border-[#EAE2D5] p-4">
-        <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">Помещение</h3>
+        <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">{floor.name}</h3>
         {room ? (
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
@@ -142,7 +151,7 @@ export function PropertiesPanel({
             </div>
             <div className="flex items-center justify-between text-xs text-[#8B7D6B]">
               <span>
-                Стен: {room.length} · объектов: {doc.objects.length}
+                Стен: {room.length} · объектов: {floor.objects.length}
               </span>
               <button onClick={onClearRoom} className="flex items-center gap-1 font-semibold text-[#B3401E] hover:underline">
                 <Eraser className="h-3.5 w-3.5" /> Очистить
@@ -236,18 +245,26 @@ export function PropertiesPanel({
             </div>
 
             <div className="flex gap-2 pt-1">
-              <Button variant="outline" className="h-8 flex-1 border-[#E4DAC8] text-xs" onClick={() => onDuplicateObject(selected.id)}>
-                <Copy className="mr-1 h-3.5 w-3.5" /> Дублировать
+              <Button
+                variant="outline"
+                className={cn('h-8 flex-1 border-[#E4DAC8] text-xs', selected.flip && 'border-[#E8730C] bg-[#FDF3E7] text-[#C55F05]')}
+                onClick={() => onMirrorObject(selected.id)}
+                title="Отзеркалить объект (M)"
+              >
+                <FlipHorizontal className="mr-1 h-3.5 w-3.5" /> Отзеркалить
               </Button>
-              <Button variant="destructive" className="h-8 flex-1 text-xs" onClick={() => onDeleteObject(selected.id)}>
-                <Trash2 className="mr-1 h-3.5 w-3.5" /> Удалить
+              <Button variant="outline" className="h-8 flex-1 border-[#E4DAC8] text-xs" onClick={() => onDuplicateObject(selected.id)}>
+                <Copy className="mr-1 h-3.5 w-3.5" /> Копия
               </Button>
             </div>
+            <Button variant="destructive" className="h-8 w-full text-xs" onClick={() => onDeleteObject(selected.id)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Удалить
+            </Button>
           </div>
         ) : (
           <p className="text-xs leading-relaxed text-[#8B7D6B]">
             Кликните по объекту на плане, чтобы изменить его размеры, позицию, угол поворота и цвет. Клавиши: <b>R</b> — поворот,
-            <b> Ctrl+D</b> — копия, <b>Del</b> — удалить.
+            <b> M</b> — отзеркалить, <b>Ctrl+D</b> — копия, <b>Del</b> — удалить.
           </p>
         )}
       </div>
@@ -277,7 +294,30 @@ export function PropertiesPanel({
         ) : (
           <p className="text-xs leading-relaxed text-[#8B7D6B]">
             Инструментом <span className="font-semibold text-[#3D3428]">«Перегородки»</span> рисуйте внутренние стены — линия прилипает
-            к стенам комнаты. Готовую перегородку можно выделить кликом и править узлы.
+            к стенам комнаты. Ластик удалит часть перегородки или стены.
+          </p>
+        )}
+      </div>
+
+      {/* Размер (выноска) */}
+      <div className="border-b border-[#EAE2D5] p-4">
+        <h3 className="mb-2.5 flex items-center gap-1.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">
+          <Ruler className="h-3.5 w-3.5" /> Размер
+        </h3>
+        {selectedDimension ? (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-[#F7F1E6] px-3 py-2">
+              <div className="text-[10px] font-semibold tracking-wide text-[#8B7D6B] uppercase">Длина</div>
+              <div className="text-lg font-bold text-[#3D3428] tabular-nums">{fmtLen(dimLen)}</div>
+            </div>
+            <Button variant="destructive" className="h-8 w-full text-xs" onClick={() => onDeleteDimension(selectedDimension.id)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Удалить размер
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs leading-relaxed text-[#8B7D6B]">
+            Инструментом <span className="font-semibold text-[#3D3428]">«Размер»</span> кликните начало и конец отрезка — выноска с
+            длиной закрепится на плане. Рулетка меряет без закрепления.
           </p>
         )}
       </div>

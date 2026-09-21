@@ -1,4 +1,6 @@
-import type { Partition, PlannerDoc, PlannerObject, Underlay } from './types'
+import type { PlannerDoc } from './types'
+import { normalizeDoc } from './migrate'
+import { currentFloor } from './types'
 import { objectsBBox, pointsBBox, rectCorners, unionBBox } from './geometry'
 import { drawScene, preloadUnderlayImage } from './draw'
 
@@ -9,65 +11,15 @@ export interface SaveFile {
 }
 
 export function makeSaveFile(doc: PlannerDoc, showGrid: boolean): SaveFile {
-  return { version: 1, doc, showGrid }
+  return { version: 2, doc, showGrid }
 }
 
-function num(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) ? v : null
-}
-
-function validateUnderlay(u: unknown): Underlay | null {
-  if (!u || typeof u !== 'object') return null
-  const o = u as Record<string, unknown>
-  if (typeof o.src !== 'string' || !o.src.startsWith('data:image/')) return null
-  const w = num(o.w)
-  const h = num(o.h)
-  if (w === null || h === null || w < 1 || h < 1) return null
-  const opacity = num(o.opacity)
-  return {
-    src: o.src,
-    imgW: num(o.imgW) ?? w,
-    imgH: num(o.imgH) ?? h,
-    x: num(o.x) ?? 0,
-    y: num(o.y) ?? 0,
-    w: Math.min(w, 100000),
-    h: Math.min(h, 100000),
-    angle: num(o.angle) ?? 0,
-    opacity: opacity === null ? 0.55 : Math.max(0.05, Math.min(1, opacity)),
-    visible: o.visible !== false,
-  }
-}
-
+/**
+ * Валидация файла проекта / автосохранения.
+ * Принимает новые (v2, многоэтажные) и все старые форматы — см. migrate.normalizeDoc.
+ */
 export function validateSaveFile(data: unknown): PlannerDoc | null {
-  if (!data || typeof data !== 'object') return null
-  const d = data as Partial<SaveFile>
-  const doc = d.doc
-  if (!doc || typeof doc !== 'object') return null
-  const room =
-    doc.room === null
-      ? null
-      : Array.isArray(doc.room) && doc.room.every((p) => p && typeof p.x === 'number' && typeof p.y === 'number')
-        ? doc.room
-        : null
-  const objects = Array.isArray(doc.objects)
-    ? doc.objects.filter(
-        (o): o is PlannerObject =>
-          !!o && typeof o.id === 'string' && typeof o.x === 'number' && typeof o.y === 'number' && typeof o.w === 'number' && typeof o.h === 'number',
-      )
-    : []
-  const gridStep = typeof doc.gridStep === 'number' && doc.gridStep > 0 ? doc.gridStep : 25
-  const underlay = validateUnderlay(doc.underlay)
-  const partitions = Array.isArray(doc.partitions)
-    ? doc.partitions.filter(
-        (p): p is Partition =>
-          !!p &&
-          typeof p.id === 'string' &&
-          Array.isArray(p.pts) &&
-          p.pts.length >= 2 &&
-          p.pts.every((q) => !!q && typeof q.x === 'number' && typeof q.y === 'number'),
-      )
-    : []
-  return { room, partitions, objects, underlay, gridStep }
+  return normalizeDoc(data)
 }
 
 function download(blob: Blob, filename: string) {
@@ -92,11 +44,13 @@ function fmtAreaLabel(cm2: number): string {
 }
 
 export async function exportPNG(doc: PlannerDoc) {
-  const roomBbox = doc.room && doc.room.length >= 3 ? pointsBBox(doc.room) : null
-  const objBbox = objectsBBox(doc.objects)
-  const partBbox = doc.partitions.length > 0 ? pointsBBox(doc.partitions.flatMap((p) => p.pts)) : null
-  const underlayBbox = doc.underlay?.visible ? pointsBBox(rectCorners(doc.underlay)) : null
-  const bbox = unionBBox(unionBBox(unionBBox(roomBbox, objBbox), partBbox), underlayBbox)
+  const floor = currentFloor(doc)
+  const roomBbox = floor.room && floor.room.length >= 3 ? pointsBBox(floor.room) : null
+  const objBbox = objectsBBox(floor.objects)
+  const partBbox = floor.partitions.length > 0 ? pointsBBox(floor.partitions.flatMap((p) => p.pts)) : null
+  const dimBbox = floor.dimensions.length > 0 ? pointsBBox(floor.dimensions.flatMap((d) => [d.a, d.b])) : null
+  const underlayBbox = floor.underlay?.visible ? pointsBBox(rectCorners(floor.underlay)) : null
+  const bbox = unionBBox(unionBBox(unionBBox(unionBBox(roomBbox, objBbox), partBbox), dimBbox), underlayBbox)
   const pad = 60
   let minX = 0
   let minY = 0
@@ -123,9 +77,9 @@ export async function exportPNG(doc: PlannerDoc) {
   if (!ctx) return
 
   // ждём загрузку картинки подложки, чтобы она гарантированно попала в PNG
-  if (doc.underlay?.visible) {
+  if (floor.underlay?.visible) {
     try {
-      await preloadUnderlayImage(doc.underlay.src)
+      await preloadUnderlayImage(floor.underlay.src)
     } catch {
       // без подложки, но план всё равно экспортируем
     }
@@ -148,33 +102,42 @@ export async function exportPNG(doc: PlannerDoc) {
     selectedPartitionId: null,
     draggingPartitionVertex: null,
     drawingMode: 'room',
+    layers: doc.layers,
+    selectedDimensionId: null,
+    ruler: null,
   })
 
-  // подпись с площадью
-  if (doc.room && doc.room.length >= 3) {
-    let area = 0
-    for (let i = 0; i < doc.room.length; i++) {
-      const a = doc.room[i]
-      const b = doc.room[(i + 1) % doc.room.length]
-      area += a.x * b.y - b.x * a.y
-    }
-    area = Math.abs(area) / 2
-    ctx.save()
-    ctx.strokeStyle = '#D8CBB6'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(20, cssH - stripH / 2)
-    ctx.lineTo(cssW - 20, cssH - stripH / 2)
-    ctx.stroke()
-    ctx.font = '600 22px ui-sans-serif, system-ui, sans-serif'
-    ctx.fillStyle = '#6B5D4F'
-    ctx.textAlign = 'left'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(`Площадь помещения: ${fmtAreaLabel(area)}`, 20, cssH - stripH / 2 - 18)
-    ctx.restore()
-  }
+  // подпись с площадью и этажом
+  ctx.save()
+  ctx.strokeStyle = '#D8CBB6'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(20, cssH - stripH / 2)
+  ctx.lineTo(cssW - 20, cssH - stripH / 2)
+  ctx.stroke()
+  ctx.font = '600 22px ui-sans-serif, system-ui, sans-serif'
+  ctx.fillStyle = '#6B5D4F'
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  const label = floor.room && floor.room.length >= 3 ? `Площадь помещения: ${fmtAreaLabel(polysArea(floor.room))}` : 'План помещения'
+  ctx.fillText(label, 20, cssH - stripH / 2 - 18)
+  ctx.font = '600 16px ui-sans-serif, system-ui, sans-serif'
+  ctx.fillStyle = '#8B7D6B'
+  ctx.textAlign = 'right'
+  ctx.fillText(floor.name, cssW - 20, cssH - stripH / 2 + 20)
+  ctx.restore()
 
   canvas.toBlob((blob) => {
     if (blob) download(blob, 'plan-pomeshcheniya.png')
   }, 'image/png')
+}
+
+function polysArea(pts: { x: number; y: number }[]): number {
+  let area = 0
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    area += a.x * b.y - b.x * a.y
+  }
+  return Math.abs(area) / 2
 }
