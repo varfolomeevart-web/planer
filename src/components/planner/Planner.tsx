@@ -89,6 +89,7 @@ export function Planner() {
   const showGridRef = useRef(showGrid)
   const drawingPtsRef = useRef<Pt[] | null>(null)
   const cursorPlanRef = useRef<Pt | null>(null)
+  const pointerScreenRef = useRef<Pt | null>(null)
   const ghostRef = useRef<PlannerObject | null>(null)
   const dragVertexRef = useRef<number | null>(null)
   const spaceRef = useRef(false)
@@ -1134,6 +1135,7 @@ export function Planner() {
 
     const onPointerMove = (e: PointerEvent) => {
       const pos = getPos(e)
+      pointerScreenRef.current = pos
       const plan = screenToPlan(pos.x, pos.y, viewRef.current)
       cursorPlanRef.current = plan
       updateCoords(plan)
@@ -1401,23 +1403,43 @@ export function Planner() {
       if (e.code === 'Digit6' && !e.shiftKey) handleToolChange('ruler')
       if (e.code === 'Digit7' && !e.shiftKey) handleToolChange('dimension')
 
-      // стрелки — точное перемещение
-      if (selectedIdRef.current && e.key.startsWith('Arrow')) {
+      // Стрелки: панорама вида (работает и во время рисования стены).
+      // Shift+стрелки — сдвиг выделенного объекта на шаг сетки
+      if (e.key.startsWith('Arrow')) {
         e.preventDefault()
-        const o = currentFloor(docRef.current).objects.find((x) => x.id === selectedIdRef.current)
-        if (!o) return
-        const base = showGridRef.current ? docRef.current.gridStep : 10
-        const step = e.shiftKey ? 1 : base
+        if (e.shiftKey && selectedIdRef.current) {
+          const o = currentFloor(docRef.current).objects.find((x) => x.id === selectedIdRef.current)
+          if (!o) return
+          const step = showGridRef.current ? docRef.current.gridStep : 10
+          let dx = 0
+          let dy = 0
+          if (e.key === 'ArrowLeft') dx = -step
+          if (e.key === 'ArrowRight') dx = step
+          if (e.key === 'ArrowUp') dy = -step
+          if (e.key === 'ArrowDown') dy = step
+          const now = Date.now()
+          if (now - lastNudgeRef.current > 600) pushHistory()
+          lastNudgeRef.current = now
+          updateObject(o.id, { x: o.x + dx, y: o.y + dy })
+          return
+        }
+        const panPx = 60
         let dx = 0
         let dy = 0
-        if (e.key === 'ArrowLeft') dx = -step
-        if (e.key === 'ArrowRight') dx = step
-        if (e.key === 'ArrowUp') dy = -step
-        if (e.key === 'ArrowDown') dy = step
-        const now = Date.now()
-        if (now - lastNudgeRef.current > 600) pushHistory()
-        lastNudgeRef.current = now
-        updateObject(o.id, { x: o.x + dx, y: o.y + dy })
+        if (e.key === 'ArrowLeft') dx = -panPx
+        if (e.key === 'ArrowRight') dx = panPx
+        if (e.key === 'ArrowUp') dy = -panPx
+        if (e.key === 'ArrowDown') dy = panPx
+        if (!dx && !dy) return
+        viewRef.current = { ...viewRef.current, ox: viewRef.current.ox + dx, oy: viewRef.current.oy + dy }
+        userViewRef.current = true
+        // пересчитать плановую позицию курсора — превью стены/перегородки прилипнет к курсору после панорамы
+        if (pointerScreenRef.current) {
+          const plan = screenToPlan(pointerScreenRef.current.x, pointerScreenRef.current.y, viewRef.current)
+          cursorPlanRef.current = plan
+          updateCoords(plan)
+        }
+        draw()
       }
     }
 
@@ -1628,7 +1650,7 @@ export function Planner() {
                       ? 'Режим: перетаскивание холста'
                       : 'Режим: выбор и редактирование'}
           {' · '}
-          {fl.name} ({doc.floors.length}) · колесо — масштаб, пробел — панорама
+          {fl.name} ({doc.floors.length}) · колесо — масштаб · пробел или стрелки — панорама
         </span>
         <div className="flex shrink-0 items-center gap-3 tabular-nums sm:gap-4">
           <span ref={coordsRef} className="hidden sm:inline">

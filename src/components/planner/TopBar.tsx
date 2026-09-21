@@ -86,7 +86,7 @@ const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; keys: string
   { id: 'erase', label: 'Ластик', icon: Eraser, keys: [['5'], ['E']], hint: 'клик по сегменту или вершине — стереть' },
   { id: 'ruler', label: 'Рулетка', icon: Ruler, keys: [['6']], hint: 'зажми и протяни вдоль расстояния' },
   { id: 'dimension', label: 'Размер', icon: MoveHorizontal, keys: [['7']], hint: 'клик — начало, клик — конец' },
-  { id: 'pan', label: 'Рука', icon: Hand, keys: [['4'], ['H']], hint: 'тяни вид или удерживай Space' },
+  { id: 'pan', label: 'Рука', icon: Hand, keys: [['4'], ['H']], hint: 'тяни вид · пробел или стрелки — панорама' },
 ]
 
 export function TopBar({
