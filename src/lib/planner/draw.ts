@@ -1,4 +1,4 @@
-import type { PlannerDoc, PlannerObject, Pt, Underlay } from './types'
+import type { Partition, PlannerDoc, PlannerObject, Pt, Underlay } from './types'
 import { rotateHandlePos } from './geometry'
 
 export const COLORS = {
@@ -24,6 +24,12 @@ export interface DrawUI {
   showVertexHandles: boolean
   /** выделена ли подложка */
   underlaySelected: boolean
+  /** выделенная перегородка */
+  selectedPartitionId: string | null
+  /** перетаскиваемый узел выбранной перегородки */
+  draggingPartitionVertex: number | null
+  /** что рисуется инструментом-карандашом */
+  drawingMode: 'room' | 'partition'
   /** вызывается, когда картинка подложки догрузилась — для перерисовки */
   onImageLoad?: () => void
 }
@@ -399,6 +405,54 @@ function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { sca
   ctx.restore()
 }
 
+/** Внутренние стены-перегородки: полилинии + длины сегментов */
+function drawPartitions(
+  ctx: CanvasRenderingContext2D,
+  partitions: Partition[],
+  view: { scale: number; ox: number; oy: number },
+  ui: DrawUI,
+) {
+  const toPx = (p: Pt) => ({ x: p.x * view.scale + view.ox, y: p.y * view.scale + view.oy })
+  for (const part of partitions) {
+    if (part.pts.length < 2) continue
+    const sel = part.id === ui.selectedPartitionId
+    ctx.save()
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    if (sel) {
+      ctx.shadowColor = 'rgba(232, 115, 12, 0.5)'
+      ctx.shadowBlur = 10
+    }
+    ctx.strokeStyle = sel ? COLORS.accentDark : COLORS.wall
+    ctx.lineWidth = sel ? 4.5 : 4
+    ctx.beginPath()
+    part.pts.forEach((p, i) => {
+      const q = toPx(p)
+      if (i === 0) ctx.moveTo(q.x, q.y)
+      else ctx.lineTo(q.x, q.y)
+    })
+    ctx.stroke()
+    ctx.restore()
+  }
+  // длины сегментов — поверх линий
+  for (const part of partitions) {
+    if (part.pts.length < 2) continue
+    for (let i = 0; i < part.pts.length - 1; i++) {
+      const a = part.pts[i]
+      const b = part.pts[i + 1]
+      const ax = a.x * view.scale + view.ox
+      const ay = a.y * view.scale + view.oy
+      const bx = b.x * view.scale + view.ox
+      const by = b.y * view.scale + view.oy
+      if (Math.hypot(bx - ax, by - ay) < 46) continue
+      const ang = Math.atan2(by - ay, bx - ax)
+      const nx = Math.cos(ang + Math.PI / 2) * 13
+      const ny = Math.sin(ang + Math.PI / 2) * 13
+      drawLabel(ctx, fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), (ax + bx) / 2 + nx, (ay + by) / 2 + ny)
+    }
+  }
+}
+
 function drawGrid(ctx: CanvasRenderingContext2D, cssW: number, cssH: number, doc: PlannerDoc, view: { scale: number; ox: number; oy: number }) {
   const stepPx = doc.gridStep * view.scale
   if (stepPx >= 6) {
@@ -603,14 +657,18 @@ export function drawScene(
     }
   }
 
+  // Перегородки
+  if (doc.partitions.length > 0) drawPartitions(ctx, doc.partitions, view, ui)
+
   // Объекты
   for (const o of doc.objects) {
     drawObject(ctx, o, view, o.id === ui.selectedId)
   }
 
-  // Рисование стен в процессе
+  // Рисование стен/перегородок в процессе
   if (ui.drawingPts && ui.drawingPts.length > 0) {
     const pts = ui.drawingPts
+    const isPartition = ui.drawingMode === 'partition'
     ctx.save()
     ctx.strokeStyle = COLORS.accentDark
     ctx.lineWidth = 3
@@ -633,11 +691,12 @@ export function drawScene(
       const b = pts[i + 1]
       drawLabel(ctx, fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), (a.x * view.scale + view.ox + b.x * view.scale + view.ox) / 2, (a.y * view.scale + view.oy + b.y * view.scale + view.oy) / 2)
     }
-    // маркеры точек
+    // маркеры точек: у комнаты подсвечивается первая (замыкание), у перегородки — последняя (завершение)
     pts.forEach((p, i) => {
       const x = p.x * view.scale + view.ox
       const y = p.y * view.scale + view.oy
-      const closable = i === 0 && pts.length >= 3 && ui.cursor && Math.hypot(ui.cursor.x - p.x, ui.cursor.y - p.y) * view.scale < 12
+      const near = !!ui.cursor && Math.hypot(ui.cursor.x - p.x, ui.cursor.y - p.y) * view.scale < 12
+      const closable = isPartition ? i === pts.length - 1 && pts.length >= 2 && near : i === 0 && pts.length >= 3 && near
       ctx.beginPath()
       ctx.arc(x, y, closable ? 9 : 6, 0, Math.PI * 2)
       ctx.fillStyle = closable ? COLORS.accent : '#FFFFFF'
@@ -663,6 +722,25 @@ export function drawScene(
       ctx.strokeStyle = COLORS.accentDark
       ctx.stroke()
     })
+  }
+
+  // Ручки вершин выбранной перегородки
+  if (ui.selectedPartitionId && !ui.drawingPts) {
+    const part = doc.partitions.find((p) => p.id === ui.selectedPartitionId)
+    if (part) {
+      part.pts.forEach((p, i) => {
+        const x = p.x * view.scale + view.ox
+        const y = p.y * view.scale + view.oy
+        const active = ui.draggingPartitionVertex === i
+        ctx.beginPath()
+        ctx.arc(x, y, active ? 8 : 5.5, 0, Math.PI * 2)
+        ctx.fillStyle = active ? COLORS.accent : '#FFFFFF'
+        ctx.fill()
+        ctx.lineWidth = 2
+        ctx.strokeStyle = COLORS.accentDark
+        ctx.stroke()
+      })
+    }
   }
 
   // Ручка поворота выбранного объекта

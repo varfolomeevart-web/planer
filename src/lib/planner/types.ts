@@ -3,6 +3,13 @@ export interface Pt {
   y: number
 }
 
+/** Внутренняя стена-перегородка: полилиния в сантиметрах */
+export interface Partition {
+  id: string
+  /** точки полилинии, см (минимум 2) */
+  pts: Pt[]
+}
+
 export interface PlannerObject {
   id: string
   presetId: string
@@ -40,6 +47,8 @@ export interface Underlay {
 
 export interface PlannerDoc {
   room: Pt[] | null
+  /** внутренние стены-перегородки */
+  partitions: Partition[]
   objects: PlannerObject[]
   underlay: Underlay | null
   gridStep: number
@@ -54,6 +63,7 @@ export interface View {
 
 export const DEFAULT_DOC: PlannerDoc = {
   room: null,
+  partitions: [],
   objects: [],
   underlay: null,
   gridStep: 25,

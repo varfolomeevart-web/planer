@@ -1,4 +1,4 @@
-import type { PlannerDoc, PlannerObject, Underlay } from './types'
+import type { Partition, PlannerDoc, PlannerObject, Underlay } from './types'
 import { objectsBBox, pointsBBox, rectCorners, unionBBox } from './geometry'
 import { drawScene, preloadUnderlayImage } from './draw'
 
@@ -57,7 +57,17 @@ export function validateSaveFile(data: unknown): PlannerDoc | null {
     : []
   const gridStep = typeof doc.gridStep === 'number' && doc.gridStep > 0 ? doc.gridStep : 25
   const underlay = validateUnderlay(doc.underlay)
-  return { room, objects, underlay, gridStep }
+  const partitions = Array.isArray(doc.partitions)
+    ? doc.partitions.filter(
+        (p): p is Partition =>
+          !!p &&
+          typeof p.id === 'string' &&
+          Array.isArray(p.pts) &&
+          p.pts.length >= 2 &&
+          p.pts.every((q) => !!q && typeof q.x === 'number' && typeof q.y === 'number'),
+      )
+    : []
+  return { room, partitions, objects, underlay, gridStep }
 }
 
 function download(blob: Blob, filename: string) {
@@ -84,8 +94,9 @@ function fmtAreaLabel(cm2: number): string {
 export async function exportPNG(doc: PlannerDoc) {
   const roomBbox = doc.room && doc.room.length >= 3 ? pointsBBox(doc.room) : null
   const objBbox = objectsBBox(doc.objects)
+  const partBbox = doc.partitions.length > 0 ? pointsBBox(doc.partitions.flatMap((p) => p.pts)) : null
   const underlayBbox = doc.underlay?.visible ? pointsBBox(rectCorners(doc.underlay)) : null
-  const bbox = unionBBox(unionBBox(roomBbox, objBbox), underlayBbox)
+  const bbox = unionBBox(unionBBox(unionBBox(roomBbox, objBbox), partBbox), underlayBbox)
   const pad = 60
   let minX = 0
   let minY = 0
@@ -134,6 +145,9 @@ export async function exportPNG(doc: PlannerDoc) {
     draggingVertex: null,
     showVertexHandles: false,
     underlaySelected: false,
+    selectedPartitionId: null,
+    draggingPartitionVertex: null,
+    drawingMode: 'room',
   })
 
   // подпись с площадью

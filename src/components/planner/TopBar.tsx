@@ -13,6 +13,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import {
+  BrickWall,
   FilePlus2,
   FileUp,
   FileDown,
@@ -54,7 +55,8 @@ interface Props {
 const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; key: string }[] = [
   { id: 'select', label: 'Выбор', icon: MousePointer2, key: '1' },
   { id: 'wall', label: 'Стены', icon: PencilLine, key: '2' },
-  { id: 'pan', label: 'Рука', icon: Hand, key: '3' },
+  { id: 'partition', label: 'Перегородки', icon: BrickWall, key: '3' },
+  { id: 'pan', label: 'Рука', icon: Hand, key: '4' },
 ]
 
 export function TopBar({

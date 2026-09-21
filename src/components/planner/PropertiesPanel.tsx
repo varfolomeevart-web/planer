@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
+import type { Partition, PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
 import { GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
 import { fmtLen } from '@/lib/planner/draw'
@@ -17,12 +17,14 @@ interface Props {
   doc: PlannerDoc
   showGrid: boolean
   selected: PlannerObject | null
+  selectedPartition: Partition | null
   underlay: Underlay | null
   underlaySelected: boolean
   onUpdateObject: (id: string, patch: Partial<PlannerObject>) => void
   onCommit: () => void
   onDeleteObject: (id: string) => void
   onDuplicateObject: (id: string) => void
+  onDeletePartition: (id: string) => void
   onClearRoom: () => void
   onSelectUnderlay: () => void
   onUpdateUnderlay: (patch: Partial<Underlay>) => void
@@ -97,12 +99,14 @@ export function PropertiesPanel({
   doc,
   showGrid,
   selected,
+  selectedPartition,
   underlay,
   underlaySelected,
   onUpdateObject,
   onCommit,
   onDeleteObject,
   onDuplicateObject,
+  onDeletePartition,
   onClearRoom,
   onSelectUnderlay,
   onUpdateUnderlay,
@@ -115,6 +119,9 @@ export function PropertiesPanel({
   const room = doc.room && doc.room.length >= 3 ? doc.room : null
   const area = room ? polygonArea(room) : 0
   const perim = room ? polygonPerimeter(room) : 0
+  const partLen = selectedPartition
+    ? selectedPartition.pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - selectedPartition.pts[i].x, p.y - selectedPartition.pts[i].y), 0)
+    : 0
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto planner-scroll">
@@ -241,6 +248,36 @@ export function PropertiesPanel({
           <p className="text-xs leading-relaxed text-[#8B7D6B]">
             Кликните по объекту на плане, чтобы изменить его размеры, позицию, угол поворота и цвет. Клавиши: <b>R</b> — поворот,
             <b> Ctrl+D</b> — копия, <b>Del</b> — удалить.
+          </p>
+        )}
+      </div>
+
+      {/* Перегородка */}
+      <div className="border-b border-[#EAE2D5] p-4">
+        <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">Перегородка</h3>
+        {selectedPartition ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-[#F7F1E6] px-3 py-2">
+                <div className="text-[10px] font-semibold tracking-wide text-[#8B7D6B] uppercase">Длина</div>
+                <div className="text-lg font-bold text-[#3D3428] tabular-nums">{fmtLen(partLen)}</div>
+              </div>
+              <div className="rounded-lg bg-[#F7F1E6] px-3 py-2">
+                <div className="text-[10px] font-semibold tracking-wide text-[#8B7D6B] uppercase">Узлов</div>
+                <div className="text-lg font-bold text-[#3D3428] tabular-nums">{selectedPartition.pts.length}</div>
+              </div>
+            </div>
+            <p className="text-xs leading-relaxed text-[#8B7D6B]">
+              Перетащите белые узлы на плане, чтобы изменить форму. <b>Del</b> — удалить перегородку.
+            </p>
+            <Button variant="destructive" className="h-8 w-full text-xs" onClick={() => onDeletePartition(selectedPartition.id)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Удалить перегородку
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs leading-relaxed text-[#8B7D6B]">
+            Инструментом <span className="font-semibold text-[#3D3428]">«Перегородки»</span> рисуйте внутренние стены — линия прилипает
+            к стенам комнаты. Готовую перегородку можно выделить кликом и править узлы.
           </p>
         )}
       </div>

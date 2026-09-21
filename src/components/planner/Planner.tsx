@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
+import type { Partition, PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
 import { DEFAULT_DOC, uid } from '@/lib/planner/types'
 import type { Preset } from '@/lib/planner/presets'
 import { getPreset } from '@/lib/planner/presets'
 import type { Tool } from '@/lib/planner/tools'
 import {
+  closestOnSegment,
+  distToSegment,
   pointInObject,
   pointInRect,
   pointsBBox,
@@ -35,12 +37,13 @@ const MIN_SCALE = 0.02
 const MAX_SCALE = 2
 
 interface Interaction {
-  type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex' | 'underlayDrag'
+  type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex' | 'underlayDrag' | 'partitionVertex'
   panStart?: { ox: number; oy: number; px: number; py: number }
   grabDX?: number
   grabDY?: number
   moved?: boolean
   vertexIdx?: number
+  partitionId?: string
 }
 
 export function Planner() {
@@ -53,6 +56,7 @@ export function Planner() {
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [hist, setHist] = useState({ p: 0, f: 0 })
   const [underlaySelected, setUnderlaySelected] = useState(false)
+  const [selectedPartitionId, setSelectedPartitionId] = useState<string | null>(null)
 
   // ---------- refs ----------
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -79,6 +83,8 @@ export function Planner() {
   const loadedRef = useRef(false)
   const lastNudgeRef = useRef(0)
   const underlaySelectedRef = useRef(false)
+  const selectedPartitionIdRef = useRef<string | null>(null)
+  const partitionVertexRef = useRef<number | null>(null)
   const interRef = useRef<Interaction>({ type: 'none' })
   const historyRef = useRef<{ past: string[]; future: string[] }>({ past: [], future: [] })
 
@@ -89,6 +95,7 @@ export function Planner() {
   useEffect(() => void (placePresetRef.current = placePreset), [placePreset])
   useEffect(() => void (showGridRef.current = showGrid), [showGrid])
   useEffect(() => void (underlaySelectedRef.current = underlaySelected), [underlaySelected])
+  useEffect(() => void (selectedPartitionIdRef.current = selectedPartitionId), [selectedPartitionId])
 
   // ---------- базовые операции ----------
   const applyDoc = useCallback((next: PlannerDoc) => {
@@ -125,6 +132,7 @@ export function Planner() {
   const fitView = useCallback(() => {
     const d = docRef.current
     let bbox = unionBBox(d.room && d.room.length >= 3 ? pointsBBox(d.room) : null, objectsBBox(d.objects))
+    bbox = unionBBox(bbox, d.partitions.length > 0 ? pointsBBox(d.partitions.flatMap((p) => p.pts)) : null)
     if (!bbox) bbox = { minX: 0, minY: 0, maxX: 600, maxY: 500 }
     const pad = 60
     const wCm = Math.max(100, bbox.maxX - bbox.minX + pad * 2)
@@ -154,6 +162,9 @@ export function Planner() {
       draggingVertex: dragVertexRef.current,
       showVertexHandles: toolRef.current === 'select' && !placePresetRef.current,
       underlaySelected: underlaySelectedRef.current,
+      selectedPartitionId: selectedPartitionIdRef.current,
+      draggingPartitionVertex: partitionVertexRef.current,
+      drawingMode: toolRef.current === 'partition' ? 'partition' : 'room',
       onImageLoad: () => drawRef.current(),
     })
     if (zoomRef.current) zoomRef.current.textContent = `${Math.round(viewRef.current.scale * 100)}%`
@@ -238,7 +249,7 @@ export function Planner() {
   // ---------- перерисовка при изменении состояния ----------
   useEffect(() => {
     draw()
-  }, [doc, showGrid, tool, selectedId, placePreset, underlaySelected, draw])
+  }, [doc, showGrid, tool, selectedId, placePreset, underlaySelected, selectedPartitionId, draw])
 
   // ---------- очистка выделения ----------
   useEffect(() => {
@@ -247,6 +258,13 @@ export function Planner() {
       setSelectedId(null)
     }
   }, [doc, selectedId])
+
+  useEffect(() => {
+    if (selectedPartitionId && !doc.partitions.some((p) => p.id === selectedPartitionId)) {
+      selectedPartitionIdRef.current = null
+      setSelectedPartitionId(null)
+    }
+  }, [doc, selectedPartitionId])
 
   // ---------- действия ----------
   const startWallDrawing = useCallback(() => {
@@ -261,7 +279,7 @@ export function Planner() {
 
   const handleToolChange = useCallback(
     (t: Tool) => {
-      if (t !== 'wall') drawingPtsRef.current = null
+      if (toolRef.current !== t) drawingPtsRef.current = null
       if (t !== 'select') {
         placePresetRef.current = null
         setPlacePreset(null)
@@ -293,6 +311,36 @@ export function Planner() {
     draw()
     toast.success('Комната создана — добавьте объекты из каталога')
   }, [applyDoc, pushHistory, fitView, draw])
+
+  /** Завершить рисование перегородки: Enter, клик по последней точке или двойной клик */
+  const finishPartition = useCallback(() => {
+    const pts = drawingPtsRef.current
+    if (!pts) return
+    drawingPtsRef.current = null
+    cursorPlanRef.current = null
+    // убираем дубли точек от прилипания
+    const cleaned: Pt[] = []
+    for (const p of pts) {
+      const q = cleaned[cleaned.length - 1]
+      if (!q || Math.hypot(q.x - p.x, q.y - p.y) > 1) cleaned.push(p)
+    }
+    if (cleaned.length >= 2) {
+      pushHistory()
+      const part: Partition = { id: uid(), pts: cleaned }
+      applyDoc({ ...docRef.current, partitions: [...docRef.current.partitions, part] })
+      toast.success('Перегородка добавлена — можно рисовать следующую, Esc — выйти из режима')
+    }
+    draw()
+  }, [applyDoc, pushHistory, draw])
+
+  const deletePartition = useCallback(
+    (id: string) => {
+      pushHistory()
+      applyDoc({ ...docRef.current, partitions: docRef.current.partitions.filter((p) => p.id !== id) })
+      toast('Перегородка удалена', { icon: '🗑️' })
+    },
+    [applyDoc, pushHistory],
+  )
 
   const placeObject = useCallback(
     (plan: Pt, keep: boolean) => {
@@ -439,6 +487,8 @@ export function Planner() {
     applyDoc({ ...DEFAULT_DOC, gridStep: docRef.current.gridStep })
     selectedIdRef.current = null
     setSelectedId(null)
+    selectedPartitionIdRef.current = null
+    setSelectedPartitionId(null)
     underlaySelectedRef.current = false
     setUnderlaySelected(false)
     drawingPtsRef.current = null
@@ -462,6 +512,8 @@ export function Planner() {
         applyDoc(parsed)
         selectedIdRef.current = null
         setSelectedId(null)
+        selectedPartitionIdRef.current = null
+        setSelectedPartitionId(null)
         underlaySelectedRef.current = false
         setUnderlaySelected(false)
         userViewRef.current = false
@@ -480,6 +532,8 @@ export function Planner() {
       placePresetRef.current = p
       setPlacePreset(p)
       drawingPtsRef.current = null
+      selectedPartitionIdRef.current = null
+      setSelectedPartitionId(null)
       toolRef.current = 'select'
       setTool('select')
       draw()
@@ -504,12 +558,51 @@ export function Planner() {
         : '—'
     }
 
+    /** Прилипание точки перегородки: вершины → проекция на линии стен → сетка */
+    const snapPartitionPoint = (plan: Pt): Pt => {
+      const s = viewRef.current.scale
+      const radV = 10 / s
+      let bestVert: Pt | null = null
+      let bestVertD = radV
+      const verts = [...(docRef.current.room ?? []), ...docRef.current.partitions.flatMap((p) => p.pts)]
+      for (const v of verts) {
+        const d = Math.hypot(v.x - plan.x, v.y - plan.y)
+        if (d < bestVertD) {
+          bestVertD = d
+          bestVert = v
+        }
+      }
+      if (bestVert) return bestVert
+      const radS = 12 / s
+      const segs: [Pt, Pt][] = []
+      const room = docRef.current.room
+      if (room && room.length >= 3) {
+        for (let i = 0; i < room.length; i++) segs.push([room[i], room[(i + 1) % room.length]])
+      }
+      for (const part of docRef.current.partitions) {
+        for (let i = 0; i < part.pts.length - 1; i++) segs.push([part.pts[i], part.pts[i + 1]])
+      }
+      let bestSeg: Pt | null = null
+      let bestSegD = radS
+      for (const [a, b] of segs) {
+        const c = closestOnSegment(plan, a, b)
+        const d = Math.hypot(c.x - plan.x, c.y - plan.y)
+        if (d < bestSegD) {
+          bestSegD = d
+          bestSeg = c
+        }
+      }
+      if (bestSeg) return bestSeg
+      const step = docRef.current.gridStep
+      return { x: snapValue(plan.x, step), y: snapValue(plan.y, step) }
+    }
+
     const updateCursorStyle = (plan: Pt | null) => {
       if (spaceRef.current || toolRef.current === 'pan' || interRef.current.type === 'pan') {
         canvas.style.cursor = interRef.current.type === 'pan' ? 'grabbing' : 'grab'
         return
       }
-      if (toolRef.current === 'wall' || placePresetRef.current) {
+      if (toolRef.current === 'wall' || toolRef.current === 'partition' || placePresetRef.current) {
         canvas.style.cursor = 'crosshair'
         return
       }
@@ -530,10 +623,27 @@ export function Planner() {
             }
           }
         }
+        const selPart = docRef.current.partitions.find((p) => p.id === selectedPartitionIdRef.current)
+        if (selPart) {
+          for (const p of selPart.pts) {
+            if (Math.hypot((p.x - plan.x) * viewRef.current.scale, (p.y - plan.y) * viewRef.current.scale) < 9) {
+              canvas.style.cursor = 'pointer'
+              return
+            }
+          }
+        }
         for (let i = docRef.current.objects.length - 1; i >= 0; i--) {
           if (pointInObject(docRef.current.objects[i], plan)) {
             canvas.style.cursor = 'move'
             return
+          }
+        }
+        for (const part of docRef.current.partitions) {
+          for (let j = 0; j < part.pts.length - 1; j++) {
+            if (distToSegment(plan, part.pts[j], part.pts[j + 1]) * viewRef.current.scale < 8) {
+              canvas.style.cursor = 'pointer'
+              return
+            }
           }
         }
         const u = docRef.current.underlay
@@ -570,8 +680,12 @@ export function Planner() {
       }
 
       if (e.button === 2) {
-        // ПКМ в режиме стен — убрать последнюю точку
-        if (toolRef.current === 'wall' && drawingPtsRef.current && drawingPtsRef.current.length > 0) {
+        // ПКМ в режимах стен/перегородок — убрать последнюю точку
+        if (
+          (toolRef.current === 'wall' || toolRef.current === 'partition') &&
+          drawingPtsRef.current &&
+          drawingPtsRef.current.length > 0
+        ) {
           e.preventDefault()
           const pts = [...drawingPtsRef.current]
           pts.pop()
@@ -594,6 +708,22 @@ export function Planner() {
         }
         const step = docRef.current.gridStep
         drawingPtsRef.current = [...pts, { x: snapValue(plan.x, step), y: snapValue(plan.y, step) }]
+        draw()
+        return
+      }
+
+      // рисование перегородок
+      if (toolRef.current === 'partition') {
+        const pts = drawingPtsRef.current ?? []
+        // клик по последней точке — завершить (работает и как двойной клик)
+        if (pts.length >= 2) {
+          const last = pts[pts.length - 1]
+          if (Math.hypot(plan.x - last.x, plan.y - last.y) * viewRef.current.scale < 10) {
+            finishPartition()
+            return
+          }
+        }
+        drawingPtsRef.current = [...pts, snapPartitionPoint(plan)]
         draw()
         return
       }
@@ -624,8 +754,24 @@ export function Planner() {
         for (let i = 0; i < room.length; i++) {
           if (Math.hypot((room[i].x - plan.x) * viewRef.current.scale, (room[i].y - plan.y) * viewRef.current.scale) < 9) {
             pushHistory()
+            selectedPartitionIdRef.current = null
+            setSelectedPartitionId(null)
             interRef.current = { type: 'vertex', vertexIdx: i }
             dragVertexRef.current = i
+            return
+          }
+        }
+      }
+      // узлы выбранной перегородки — перетаскивание
+      const selPart = docRef.current.partitions.find((p) => p.id === selectedPartitionIdRef.current)
+      if (selPart) {
+        for (let i = 0; i < selPart.pts.length; i++) {
+          if (Math.hypot((selPart.pts[i].x - plan.x) * viewRef.current.scale, (selPart.pts[i].y - plan.y) * viewRef.current.scale) < 9) {
+            pushHistory()
+            selectedIdRef.current = null
+            setSelectedId(null)
+            interRef.current = { type: 'partitionVertex', partitionId: selPart.id, vertexIdx: i }
+            partitionVertexRef.current = i
             return
           }
         }
@@ -635,9 +781,30 @@ export function Planner() {
         if (pointInObject(o, plan)) {
           selectedIdRef.current = o.id
           setSelectedId(o.id)
+          selectedPartitionIdRef.current = null
+          setSelectedPartitionId(null)
           pushHistory()
           interRef.current = { type: 'drag', grabDX: plan.x - o.x, grabDY: plan.y - o.y, moved: false }
           canvas.style.cursor = 'grabbing'
+          return
+        }
+      }
+      // перегородки — выбор кликом по сегменту
+      for (let i = docRef.current.partitions.length - 1; i >= 0; i--) {
+        const part = docRef.current.partitions[i]
+        let hit = false
+        for (let j = 0; j < part.pts.length - 1; j++) {
+          if (distToSegment(plan, part.pts[j], part.pts[j + 1]) * viewRef.current.scale < 8) {
+            hit = true
+            break
+          }
+        }
+        if (hit) {
+          selectedIdRef.current = null
+          setSelectedId(null)
+          selectedPartitionIdRef.current = part.id
+          setSelectedPartitionId(part.id)
+          draw()
           return
         }
       }
@@ -656,6 +823,8 @@ export function Planner() {
       // пустое место — снять выделение
       selectedIdRef.current = null
       setSelectedId(null)
+      selectedPartitionIdRef.current = null
+      setSelectedPartitionId(null)
     }
 
     const onPointerMove = (e: PointerEvent) => {
@@ -728,6 +897,18 @@ export function Planner() {
         return
       }
 
+      if (it.type === 'partitionVertex' && it.partitionId && it.vertexIdx !== undefined) {
+        const idx = it.vertexIdx
+        const pid = it.partitionId
+        const step = docRef.current.gridStep
+        const np = e.altKey ? { x: plan.x, y: plan.y } : { x: snapValue(plan.x, step), y: snapValue(plan.y, step) }
+        applyDoc({
+          ...docRef.current,
+          partitions: docRef.current.partitions.map((p) => (p.id === pid ? { ...p, pts: p.pts.map((q, i) => (i === idx ? np : q)) } : p)),
+        })
+        return
+      }
+
       // без зажатой кнопки: призрак и курсор
       if (placePresetRef.current) {
         const p = placePresetRef.current
@@ -740,7 +921,13 @@ export function Planner() {
         }
         ghostRef.current = { id: 'ghost', presetId: p.id, name: p.name, x: gx, y: gy, w: p.w, h: p.h, angle: 0, color: p.color }
         draw()
-      } else if (toolRef.current === 'wall' && drawingPtsRef.current) {
+      } else if ((toolRef.current === 'wall' || toolRef.current === 'partition') && drawingPtsRef.current) {
+        if (toolRef.current === 'partition') {
+          // резиновая нить показывает точку с прилипанием
+          const snapped = snapPartitionPoint(plan)
+          cursorPlanRef.current = snapped
+          updateCoords(snapped)
+        }
         draw()
       }
       updateCursorStyle(plan)
@@ -754,6 +941,7 @@ export function Planner() {
         setHist({ p: historyRef.current.past.length, f: historyRef.current.future.length })
       }
       if (it.type === 'vertex') dragVertexRef.current = null
+      if (it.type === 'partitionVertex') partitionVertexRef.current = null
       interRef.current = { type: 'none' }
       updateCursorStyle(cursorPlanRef.current)
     }
@@ -806,6 +994,7 @@ export function Planner() {
       if (e.key === 'Escape') {
         if (drawingPtsRef.current) {
           drawingPtsRef.current = null
+          cursorPlanRef.current = null
           draw()
         } else if (placePresetRef.current) {
           placePresetRef.current = null
@@ -815,6 +1004,9 @@ export function Planner() {
         } else if (selectedIdRef.current) {
           selectedIdRef.current = null
           setSelectedId(null)
+        } else if (selectedPartitionIdRef.current) {
+          selectedPartitionIdRef.current = null
+          setSelectedPartitionId(null)
         } else if (underlaySelectedRef.current) {
           underlaySelectedRef.current = false
           setUnderlaySelected(false)
@@ -823,14 +1015,22 @@ export function Planner() {
       }
 
       if (e.key === 'Enter' && drawingPtsRef.current) {
-        closeRoom()
+        if (toolRef.current === 'partition') finishPartition()
+        else closeRoom()
         return
       }
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIdRef.current) {
-        e.preventDefault()
-        deleteObject(selectedIdRef.current)
-        return
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIdRef.current) {
+          e.preventDefault()
+          deleteObject(selectedIdRef.current)
+          return
+        }
+        if (selectedPartitionIdRef.current) {
+          e.preventDefault()
+          deletePartition(selectedPartitionIdRef.current)
+          return
+        }
       }
 
       if (e.code === 'KeyR' && selectedIdRef.current) {
@@ -845,7 +1045,8 @@ export function Planner() {
 
       if (e.code === 'KeyV' || e.code === 'Digit1') handleToolChange('select')
       if (e.code === 'KeyW' || e.code === 'Digit2') handleToolChange('wall')
-      if (e.code === 'KeyH' || e.code === 'Digit3') handleToolChange('pan')
+      if (e.code === 'KeyP' || e.code === 'Digit3') handleToolChange('partition')
+      if (e.code === 'KeyH' || e.code === 'Digit4') handleToolChange('pan')
 
       // стрелки — точное перемещение
       if (selectedIdRef.current && e.key.startsWith('Arrow')) {
@@ -897,8 +1098,10 @@ export function Planner() {
     applyDoc,
     closeRoom,
     deleteObject,
+    deletePartition,
     duplicateObject,
     draw,
+    finishPartition,
     fitView,
     handleToolChange,
     placeObject,
@@ -909,15 +1112,18 @@ export function Planner() {
   ])
 
   const selected = doc.objects.find((o) => o.id === selectedId) ?? null
-  const empty = !doc.room && doc.objects.length === 0 && !doc.underlay
+  const selectedPartition = doc.partitions.find((p) => p.id === selectedPartitionId) ?? null
+  const empty = !doc.room && doc.partitions.length === 0 && doc.objects.length === 0 && !doc.underlay
 
   const hint = tool === 'wall'
     ? 'Кликайте по углам комнаты · Enter или клик по первой точке — замкнуть · ПКМ — убрать точку · Esc — отмена'
-    : placePreset
-      ? `Размещение: ${placePreset.name} — кликните на плане · Shift+клик — несколько · Esc — отмена`
-      : underlaySelected
-        ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
-        : null
+    : tool === 'partition'
+      ? 'Перегородки: кликайте точки — линия прилипает к стенам · Enter или клик по последней точке — закончить · ПКМ — убрать точку · Esc — выход'
+      : placePreset
+        ? `Размещение: ${placePreset.name} — кликните на плане · Shift+клик — несколько · Esc — отмена`
+        : underlaySelected
+          ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
+          : null
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col bg-[#F6F1E9] text-[#3D3428]">
@@ -1004,12 +1210,14 @@ export function Planner() {
             doc={doc}
             showGrid={showGrid}
             selected={selected}
+            selectedPartition={selectedPartition}
             underlay={doc.underlay}
             underlaySelected={underlaySelected}
             onUpdateObject={updateObject}
             onCommit={() => pushHistory()}
             onDeleteObject={deleteObject}
             onDuplicateObject={duplicateObject}
+            onDeletePartition={deletePartition}
             onClearRoom={clearRoom}
             onSelectUnderlay={selectUnderlay}
             onUpdateUnderlay={updateUnderlay}
@@ -1025,7 +1233,13 @@ export function Planner() {
       {/* Статусная строка */}
       <footer className="z-10 flex h-8 shrink-0 items-center justify-between border-t border-[#E7DECF] bg-[#FBF7EF] px-3 text-[11px] font-medium text-[#8B7D6B] sm:px-4">
         <span className="truncate">
-          {tool === 'wall' ? 'Режим: рисование стен' : tool === 'pan' ? 'Режим: перетаскивание холста' : 'Режим: выбор и редактирование'} · колесо — масштаб, пробел — панорама
+          {tool === 'wall'
+            ? 'Режим: рисование стен'
+            : tool === 'partition'
+              ? 'Режим: рисование перегородок (P)'
+              : tool === 'pan'
+                ? 'Режим: перетаскивание холста'
+                : 'Режим: выбор и редактирование'} · колесо — масштаб, пробел — панорама
         </span>
         <div className="flex shrink-0 items-center gap-3 tabular-nums sm:gap-4">
           <span ref={coordsRef} className="hidden sm:inline">
@@ -1034,7 +1248,10 @@ export function Planner() {
           <span>
             Масштаб: <span ref={zoomRef}>—</span>
           </span>
-          <span className="hidden md:inline">Объектов: {doc.objects.length}</span>
+          <span className="hidden md:inline">
+            Объектов: {doc.objects.length}
+            {doc.partitions.length > 0 ? ` · перегородок: ${doc.partitions.length}` : ''}
+          </span>
         </div>
       </footer>
 

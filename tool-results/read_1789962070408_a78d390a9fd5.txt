@@ -1,0 +1,1052 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useCallback, useEffect, useRef, useState } from 'react'
+     4→     4→import type { PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
+     5→     5→import { DEFAULT_DOC, uid } from '@/lib/planner/types'
+     6→     6→import type { Preset } from '@/lib/planner/presets'
+     7→     7→import { getPreset } from '@/lib/planner/presets'
+     8→     8→import type { Tool } from '@/lib/planner/tools'
+     9→     9→import {
+    10→    10→  pointInObject,
+    11→    11→  pointInRect,
+    12→    12→  pointsBBox,
+    13→    13→  objectsBBox,
+    14→    14→  unionBBox,
+    15→    15→  rotateHandlePos,
+    16→    16→  screenToPlan,
+    17→    17→  snapObjectPos,
+    18→    18→  snapValue,
+    19→    19→} from '@/lib/planner/geometry'
+    20→    20→import { computeUnderlayPlacement, fileToUnderlaySource, packDocForHistory, unpackDocFromHistory } from '@/lib/planner/underlay'
+    21→    21→import { drawScene } from '@/lib/planner/draw'
+    22→    22→import { exportJSON, exportPNG, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
+    23→    23→import { Catalog } from './Catalog'
+    24→    24→import { PropertiesPanel } from './PropertiesPanel'
+    25→    25→import { TopBar } from './TopBar'
+    26→    26→import { Button } from '@/components/ui/button'
+    27→    27→import { toast } from 'sonner'
+    28→    28→import {
+    29→    29→  PencilLine,
+    30→    30→  Ruler,
+    31→    31→} from 'lucide-react'
+    32→    32→
+    33→    33→const STORAGE_KEY = 'room-planner-v1'
+    34→    34→const MIN_SCALE = 0.02
+    35→    35→const MAX_SCALE = 2
+    36→    36→
+    37→    37→interface Interaction {
+    38→    38→  type: 'none' | 'pan' | 'drag' | 'rotate' | 'vertex' | 'underlayDrag'
+    39→    39→  panStart?: { ox: number; oy: number; px: number; py: number }
+    40→    40→  grabDX?: number
+    41→    41→  grabDY?: number
+    42→    42→  moved?: boolean
+    43→    43→  vertexIdx?: number
+    44→    44→}
+    45→    45→
+    46→    46→export function Planner() {
+    47→    47→  // ---------- состояние ----------
+    48→    48→  const [doc, setDoc] = useState<PlannerDoc>(DEFAULT_DOC)
+    49→    49→  const [showGrid, setShowGrid] = useState(true)
+    50→    50→  const [tool, setTool] = useState<Tool>('select')
+    51→    51→  const [selectedId, setSelectedId] = useState<string | null>(null)
+    52→    52→  const [placePreset, setPlacePreset] = useState<Preset | null>(null)
+    53→    53→  const [savedAt, setSavedAt] = useState<string | null>(null)
+    54→    54→  const [hist, setHist] = useState({ p: 0, f: 0 })
+    55→    55→  const [underlaySelected, setUnderlaySelected] = useState(false)
+    56→    56→
+    57→    57→  // ---------- refs ----------
+    58→    58→  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    59→    59→  const wrapRef = useRef<HTMLDivElement | null>(null)
+    60→    60→  const fileInputRef = useRef<HTMLInputElement | null>(null)
+    61→    61→  const underlayInputRef = useRef<HTMLInputElement | null>(null)
+    62→    62→  const coordsRef = useRef<HTMLSpanElement | null>(null)
+    63→    63→  const zoomRef = useRef<HTMLSpanElement | null>(null)
+    64→    64→  const drawRef = useRef<() => void>(() => {})
+    65→    65→
+    66→    66→  const viewRef = useRef<View>({ scale: 0.3, ox: 250, oy: 180 })
+    67→    67→  const sizeRef = useRef({ w: 800, h: 600 })
+    68→    68→  const docRef = useRef(doc)
+    69→    69→  const toolRef = useRef(tool)
+    70→    70→  const selectedIdRef = useRef(selectedId)
+    71→    71→  const placePresetRef = useRef(placePreset)
+    72→    72→  const showGridRef = useRef(showGrid)
+    73→    73→  const drawingPtsRef = useRef<Pt[] | null>(null)
+    74→    74→  const cursorPlanRef = useRef<Pt | null>(null)
+    75→    75→  const ghostRef = useRef<PlannerObject | null>(null)
+    76→    76→  const dragVertexRef = useRef<number | null>(null)
+    77→    77→  const spaceRef = useRef(false)
+    78→    78→  const userViewRef = useRef(false)
+    79→    79→  const loadedRef = useRef(false)
+    80→    80→  const lastNudgeRef = useRef(0)
+    81→    81→  const underlaySelectedRef = useRef(false)
+    82→    82→  const interRef = useRef<Interaction>({ type: 'none' })
+    83→    83→  const historyRef = useRef<{ past: string[]; future: string[] }>({ past: [], future: [] })
+    84→    84→
+    85→    85→  // ---------- зеркала состояния для слушателей ----------
+    86→    86→  useEffect(() => void (docRef.current = doc), [doc])
+    87→    87→  useEffect(() => void (toolRef.current = tool), [tool])
+    88→    88→  useEffect(() => void (selectedIdRef.current = selectedId), [selectedId])
+    89→    89→  useEffect(() => void (placePresetRef.current = placePreset), [placePreset])
+    90→    90→  useEffect(() => void (showGridRef.current = showGrid), [showGrid])
+    91→    91→  useEffect(() => void (underlaySelectedRef.current = underlaySelected), [underlaySelected])
+    92→    92→
+    93→    93→  // ---------- базовые операции ----------
+    94→    94→  const applyDoc = useCallback((next: PlannerDoc) => {
+    95→    95→    docRef.current = next
+    96→    96→    setDoc(next)
+    97→    97→  }, [])
+    98→    98→
+    99→    99→  const pushHistory = useCallback((snapshot?: PlannerDoc) => {
+   100→   100→    const h = historyRef.current
+   101→   101→    h.past.push(packDocForHistory(snapshot ?? docRef.current))
+   102→   102→    if (h.past.length > 60) h.past.shift()
+   103→   103→    h.future = []
+   104→   104→    setHist({ p: h.past.length, f: 0 })
+   105→   105→  }, [])
+   106→   106→
+   107→   107→  const undo = useCallback(() => {
+   108→   108→    const h = historyRef.current
+   109→   109→    if (!h.past.length) return
+   110→   110→    h.future.push(packDocForHistory(docRef.current))
+   111→   111→    const prev = h.past.pop() as string
+   112→   112→    applyDoc(unpackDocFromHistory(prev))
+   113→   113→    setHist({ p: h.past.length, f: h.future.length })
+   114→   114→  }, [applyDoc])
+   115→   115→
+   116→   116→  const redo = useCallback(() => {
+   117→   117→    const h = historyRef.current
+   118→   118→    if (!h.future.length) return
+   119→   119→    h.past.push(packDocForHistory(docRef.current))
+   120→   120→    const next = h.future.pop() as string
+   121→   121→    applyDoc(unpackDocFromHistory(next))
+   122→   122→    setHist({ p: h.past.length, f: h.future.length })
+   123→   123→  }, [applyDoc])
+   124→   124→
+   125→   125→  const fitView = useCallback(() => {
+   126→   126→    const d = docRef.current
+   127→   127→    let bbox = unionBBox(d.room && d.room.length >= 3 ? pointsBBox(d.room) : null, objectsBBox(d.objects))
+   128→   128→    if (!bbox) bbox = { minX: 0, minY: 0, maxX: 600, maxY: 500 }
+   129→   129→    const pad = 60
+   130→   130→    const wCm = Math.max(100, bbox.maxX - bbox.minX + pad * 2)
+   131→   131→    const hCm = Math.max(100, bbox.maxY - bbox.minY + pad * 2)
+   132→   132→    const { w, h } = sizeRef.current
+   133→   133→    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min((w - 24) / wCm, (h - 24) / hCm)))
+   134→   134→    viewRef.current = {
+   135→   135→      scale,
+   136→   136→      ox: (w - (bbox.maxX - bbox.minX) * scale) / 2 - bbox.minX * scale,
+   137→   137→      oy: (h - (bbox.maxY - bbox.minY) * scale) / 2 - bbox.minY * scale,
+   138→   138→    }
+   139→   139→  }, [])
+   140→   140→
+   141→   141→  const draw = useCallback(() => {
+   142→   142→    const canvas = canvasRef.current
+   143→   143→    if (!canvas) return
+   144→   144→    const ctx = canvas.getContext('2d')
+   145→   145→    if (!ctx) return
+   146→   146→    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+   147→   147→    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+   148→   148→    drawScene(ctx, sizeRef.current.w, sizeRef.current.h, docRef.current, viewRef.current, {
+   149→   149→      showGrid: showGridRef.current,
+   150→   150→      selectedId: selectedIdRef.current,
+   151→   151→      drawingPts: drawingPtsRef.current,
+   152→   152→      cursor: cursorPlanRef.current,
+   153→   153→      ghost: ghostRef.current,
+   154→   154→      draggingVertex: dragVertexRef.current,
+   155→   155→      showVertexHandles: toolRef.current === 'select' && !placePresetRef.current,
+   156→   156→      underlaySelected: underlaySelectedRef.current,
+   157→   157→      onImageLoad: () => drawRef.current(),
+   158→   158→    })
+   159→   159→    if (zoomRef.current) zoomRef.current.textContent = `${Math.round(viewRef.current.scale * 100)}%`
+   160→   160→  }, [])
+   161→   161→
+   162→   162→  useEffect(() => void (drawRef.current = draw), [draw])
+   163→   163→
+   164→   164→  const zoomAt = useCallback(
+   165→   165→    (px: number, py: number, factor: number) => {
+   166→   166→      const v = viewRef.current
+   167→   167→      const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor))
+   168→   168→      const plan = screenToPlan(px, py, v)
+   169→   169→      viewRef.current = { scale: ns, ox: px - plan.x * ns, oy: py - plan.y * ns }
+   170→   170→      userViewRef.current = true
+   171→   171→      draw()
+   172→   172→    },
+   173→   173→    [draw],
+   174→   174→  )
+   175→   175→
+   176→   176→  const zoomCenter = useCallback(
+   177→   177→    (factor: number) => {
+   178→   178→      const { w, h } = sizeRef.current
+   179→   179→      zoomAt(w / 2, h / 2, factor)
+   180→   180→    },
+   181→   181→    [zoomAt],
+   182→   182→  )
+   183→   183→
+   184→   184→  // ---------- размеры канваса ----------
+   185→   185→  useEffect(() => {
+   186→   186→    const wrap = wrapRef.current
+   187→   187→    const canvas = canvasRef.current
+   188→   188→    if (!wrap || !canvas) return
+   189→   189→    const ro = new ResizeObserver(() => {
+   190→   190→      const r = wrap.getBoundingClientRect()
+   191→   191→      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+   192→   192→      sizeRef.current = { w: r.width, h: r.height }
+   193→   193→      canvas.width = Math.max(1, Math.round(r.width * dpr))
+   194→   194→      canvas.height = Math.max(1, Math.round(r.height * dpr))
+   195→   195→      if (!userViewRef.current) fitView()
+   196→   196→      draw()
+   197→   197→    })
+   198→   198→    ro.observe(wrap)
+   199→   199→    return () => ro.disconnect()
+   200→   200→  }, [draw, fitView])
+   201→   201→
+   202→   202→  // ---------- загрузка из localStorage ----------
+   203→   203→  useEffect(() => {
+   204→   204→    try {
+   205→   205→      const raw = localStorage.getItem(STORAGE_KEY)
+   206→   206→      if (raw) {
+   207→   207→        const parsedJson = JSON.parse(raw)
+   208→   208→        const parsed = validateSaveFile(parsedJson)
+   209→   209→        if (parsed) {
+   210→   210→          docRef.current = parsed
+   211→   211→          setDoc(parsed)
+   212→   212→          if (typeof parsedJson.showGrid === 'boolean') {
+   213→   213→            showGridRef.current = parsedJson.showGrid
+   214→   214→            setShowGrid(parsedJson.showGrid)
+   215→   215→          }
+   216→   216→        }
+   217→   217→      }
+   218→   218→    } catch {
+   219→   219→      // повреждённое сохранение — игнорируем
+   220→   220→    }
+   221→   221→    loadedRef.current = true
+   222→   222→  }, [])
+   223→   223→
+   224→   224→  // ---------- автосохранение ----------
+   225→   225→  useEffect(() => {
+   226→   226→    if (!loadedRef.current) return
+   227→   227→    const t = setTimeout(() => {
+   228→   228→      try {
+   229→   229→        localStorage.setItem(STORAGE_KEY, JSON.stringify(makeSaveFile(doc, showGrid)))
+   230→   230→        setSavedAt(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+   231→   231→      } catch {
+   232→   232→        // нет доступа к localStorage
+   233→   233→      }
+   234→   234→    }, 500)
+   235→   235→    return () => clearTimeout(t)
+   236→   236→  }, [doc, showGrid])
+   237→   237→
+   238→   238→  // ---------- перерисовка при изменении состояния ----------
+   239→   239→  useEffect(() => {
+   240→   240→    draw()
+   241→   241→  }, [doc, showGrid, tool, selectedId, placePreset, underlaySelected, draw])
+   242→   242→
+   243→   243→  // ---------- очистка выделения ----------
+   244→   244→  useEffect(() => {
+   245→   245→    if (selectedId && !doc.objects.some((o) => o.id === selectedId)) {
+   246→   246→      selectedIdRef.current = null
+   247→   247→      setSelectedId(null)
+   248→   248→    }
+   249→   249→  }, [doc, selectedId])
+   250→   250→
+   251→   251→  // ---------- действия ----------
+   252→   252→  const startWallDrawing = useCallback(() => {
+   253→   253→    drawingPtsRef.current = []
+   254→   254→    cursorPlanRef.current = null
+   255→   255→    placePresetRef.current = null
+   256→   256→    setPlacePreset(null)
+   257→   257→    toolRef.current = 'wall'
+   258→   258→    setTool('wall')
+   259→   259→    draw()
+   260→   260→  }, [draw])
+   261→   261→
+   262→   262→  const handleToolChange = useCallback(
+   263→   263→    (t: Tool) => {
+   264→   264→      if (t !== 'wall') drawingPtsRef.current = null
+   265→   265→      if (t !== 'select') {
+   266→   266→        placePresetRef.current = null
+   267→   267→        setPlacePreset(null)
+   268→   268→        ghostRef.current = null
+   269→   269→      }
+   270→   270→      toolRef.current = t
+   271→   271→      setTool(t)
+   272→   272→      draw()
+   273→   273→    },
+   274→   274→    [draw],
+   275→   275→  )
+   276→   276→
+   277→   277→  const closeRoom = useCallback(() => {
+   278→   278→    const pts = drawingPtsRef.current
+   279→   279→    if (!pts) return
+   280→   280→    if (pts.length < 3) {
+   281→   281→      drawingPtsRef.current = null
+   282→   282→      draw()
+   283→   283→      return
+   284→   284→    }
+   285→   285→    pushHistory()
+   286→   286→    applyDoc({ ...docRef.current, room: pts })
+   287→   287→    drawingPtsRef.current = null
+   288→   288→    cursorPlanRef.current = null
+   289→   289→    toolRef.current = 'select'
+   290→   290→    setTool('select')
+   291→   291→    userViewRef.current = false
+   292→   292→    fitView()
+   293→   293→    draw()
+   294→   294→    toast.success('Комната создана — добавьте объекты из каталога')
+   295→   295→  }, [applyDoc, pushHistory, fitView, draw])
+   296→   296→
+   297→   297→  const placeObject = useCallback(
+   298→   298→    (plan: Pt, keep: boolean) => {
+   299→   299→      const preset = placePresetRef.current
+   300→   300→      if (!preset) return
+   301→   301→      const step = docRef.current.gridStep
+   302→   302→      let x = plan.x
+   303→   303→      let y = plan.y
+   304→   304→      if (showGridRef.current) {
+   305→   305→        const s = snapObjectPos({ x, y, w: preset.w, h: preset.h }, step)
+   306→   306→        x = s.x
+   307→   307→        y = s.y
+   308→   308→      }
+   309→   309→      const obj: PlannerObject = {
+   310→   310→        id: uid(),
+   311→   311→        presetId: preset.id,
+   312→   312→        name: preset.name,
+   313→   313→        x,
+   314→   314→        y,
+   315→   315→        w: preset.w,
+   316→   316→        h: preset.h,
+   317→   317→        angle: 0,
+   318→   318→        color: preset.color,
+   319→   319→      }
+   320→   320→      pushHistory()
+   321→   321→      applyDoc({ ...docRef.current, objects: [...docRef.current.objects, obj] })
+   322→   322→      selectedIdRef.current = obj.id
+   323→   323→      setSelectedId(obj.id)
+   324→   324→      if (!keep) {
+   325→   325→        placePresetRef.current = null
+   326→   326→        setPlacePreset(null)
+   327→   327→        ghostRef.current = null
+   328→   328→      }
+   329→   329→    },
+   330→   330→    [applyDoc, pushHistory],
+   331→   331→  )
+   332→   332→
+   333→   333→  const deleteObject = useCallback(
+   334→   334→    (id: string) => {
+   335→   335→      pushHistory()
+   336→   336→      applyDoc({ ...docRef.current, objects: docRef.current.objects.filter((o) => o.id !== id) })
+   337→   337→      toast('Объект удалён', { icon: '🗑️' })
+   338→   338→    },
+   339→   339→    [applyDoc, pushHistory],
+   340→   340→  )
+   341→   341→
+   342→   342→  const duplicateObject = useCallback(
+   343→   343→    (id: string) => {
+   344→   344→      const o = docRef.current.objects.find((x) => x.id === id)
+   345→   345→      if (!o) return
+   346→   346→      pushHistory()
+   347→   347→      const copy: PlannerObject = { ...o, id: uid(), x: o.x + 20, y: o.y + 20 }
+   348→   348→      applyDoc({ ...docRef.current, objects: [...docRef.current.objects, copy] })
+   349→   349→      selectedIdRef.current = copy.id
+   350→   350→      setSelectedId(copy.id)
+   351→   351→    },
+   352→   352→    [applyDoc, pushHistory],
+   353→   353→  )
+   354→   354→
+   355→   355→  const updateObject = useCallback(
+   356→   356→    (id: string, patch: Partial<PlannerObject>) => {
+   357→   357→      applyDoc({ ...docRef.current, objects: docRef.current.objects.map((o) => (o.id === id ? { ...o, ...patch } : o)) })
+   358→   358→    },
+   359→   359→    [applyDoc],
+   360→   360→  )
+   361→   361→
+   362→   362→  const clearRoom = useCallback(() => {
+   363→   363→    if (!docRef.current.room) return
+   364→   364→    pushHistory()
+   365→   365→    applyDoc({ ...docRef.current, room: null })
+   366→   366→    toast('Стены удалены — нарисуйте новый контур')
+   367→   367→  }, [applyDoc, pushHistory])
+   368→   368→
+   369→   369→  // ---------- подложка ----------
+   370→   370→  const handleUnderlayFile = useCallback(
+   371→   371→    async (e: React.ChangeEvent<HTMLInputElement>) => {
+   372→   372→      const file = e.target.files?.[0]
+   373→   373→      e.target.value = ''
+   374→   374→      if (!file) return
+   375→   375→      if (!file.type.startsWith('image/')) {
+   376→   376→        toast.error('Выберите файл изображения (PNG, JPG, WebP)')
+   377→   377→        return
+   378→   378→      }
+   379→   379→      try {
+   380→   380→        const { src, imgW, imgH, bytes } = await fileToUnderlaySource(file)
+   381→   381→        const place = computeUnderlayPlacement(imgW, imgH, docRef.current, sizeRef.current, viewRef.current)
+   382→   382→        pushHistory()
+   383→   383→        applyDoc({
+   384→   384→          ...docRef.current,
+   385→   385→          underlay: { src, imgW, imgH, x: place.x, y: place.y, w: place.w, h: place.h, angle: 0, opacity: 0.55, visible: true },
+   386→   386→        })
+   387→   387→        selectedIdRef.current = null
+   388→   388→        setSelectedId(null)
+   389→   389→        underlaySelectedRef.current = true
+   390→   390→        setUnderlaySelected(true)
+   391→   391→        if (bytes > 3 * 1024 * 1024) {
+   392→   392→          toast.warning('Подложка добавлена, но файл большой — автосохранение может замедлиться')
+   393→   393→        } else {
+   394→   394→          toast.success('Подложка добавлена — задайте ей точную ширину в панели справа')
+   395→   395→        }
+   396→   396→      } catch {
+   397→   397→        toast.error('Не удалось прочитать изображение')
+   398→   398→      }
+   399→   399→    },
+   400→   400→    [applyDoc, pushHistory],
+   401→   401→  )
+   402→   402→
+   403→   403→  const updateUnderlay = useCallback(
+   404→   404→    (patch: Partial<Underlay>) => {
+   405→   405→      const u = docRef.current.underlay
+   406→   406→      if (!u) return
+   407→   407→      applyDoc({ ...docRef.current, underlay: { ...u, ...patch } })
+   408→   408→    },
+   409→   409→    [applyDoc],
+   410→   410→  )
+   411→   411→
+   412→   412→  const removeUnderlay = useCallback(() => {
+   413→   413→    if (!docRef.current.underlay) return
+   414→   414→    pushHistory()
+   415→   415→    applyDoc({ ...docRef.current, underlay: null })
+   416→   416→    underlaySelectedRef.current = false
+   417→   417→    setUnderlaySelected(false)
+   418→   418→    toast('Подложка удалена', { icon: '🗑️' })
+   419→   419→  }, [applyDoc, pushHistory])
+   420→   420→
+   421→   421→  const fitUnderlay = useCallback(() => {
+   422→   422→    const u = docRef.current.underlay
+   423→   423→    if (!u) return
+   424→   424→    const place = computeUnderlayPlacement(u.imgW, u.imgH, docRef.current, sizeRef.current, viewRef.current)
+   425→   425→    pushHistory()
+   426→   426→    applyDoc({ ...docRef.current, underlay: { ...u, ...place } })
+   427→   427→  }, [applyDoc, pushHistory])
+   428→   428→
+   429→   429→  const selectUnderlay = useCallback(() => {
+   430→   430→    selectedIdRef.current = null
+   431→   431→    setSelectedId(null)
+   432→   432→    underlaySelectedRef.current = true
+   433→   433→    setUnderlaySelected(true)
+   434→   434→    draw()
+   435→   435→  }, [draw])
+   436→   436→
+   437→   437→  const handleNew = useCallback(() => {
+   438→   438→    pushHistory()
+   439→   439→    applyDoc({ ...DEFAULT_DOC, gridStep: docRef.current.gridStep })
+   440→   440→    selectedIdRef.current = null
+   441→   441→    setSelectedId(null)
+   442→   442→    underlaySelectedRef.current = false
+   443→   443→    setUnderlaySelected(false)
+   444→   444→    drawingPtsRef.current = null
+   445→   445→    ghostRef.current = null
+   446→   446→    userViewRef.current = false
+   447→   447→    fitView()
+   448→   448→    draw()
+   449→   449→    toast('Создан новый проект')
+   450→   450→  }, [applyDoc, pushHistory, fitView, draw])
+   451→   451→
+   452→   452→  const handleImportFile = useCallback(
+   453→   453→    async (e: React.ChangeEvent<HTMLInputElement>) => {
+   454→   454→      const file = e.target.files?.[0]
+   455→   455→      e.target.value = ''
+   456→   456→      if (!file) return
+   457→   457→      try {
+   458→   458→        const text = await file.text()
+   459→   459→        const parsed = validateSaveFile(JSON.parse(text))
+   460→   460→        if (!parsed) throw new Error('bad file')
+   461→   461→        pushHistory()
+   462→   462→        applyDoc(parsed)
+   463→   463→        selectedIdRef.current = null
+   464→   464→        setSelectedId(null)
+   465→   465→        underlaySelectedRef.current = false
+   466→   466→        setUnderlaySelected(false)
+   467→   467→        userViewRef.current = false
+   468→   468→        fitView()
+   469→   469→        draw()
+   470→   470→        toast.success('Проект загружен из файла')
+   471→   471→      } catch {
+   472→   472→        toast.error('Не удалось прочитать файл проекта')
+   473→   473→      }
+   474→   474→    },
+   475→   475→    [applyDoc, pushHistory, fitView, draw],
+   476→   476→  )
+   477→   477→
+   478→   478→  const handlePickPreset = useCallback(
+   479→   479→    (p: Preset) => {
+   480→   480→      placePresetRef.current = p
+   481→   481→      setPlacePreset(p)
+   482→   482→      drawingPtsRef.current = null
+   483→   483→      toolRef.current = 'select'
+   484→   484→      setTool('select')
+   485→   485→      draw()
+   486→   486→    },
+   487→   487→    [draw],
+   488→   488→  )
+   489→   489→
+   490→   490→  // ---------- слушатели мыши и клавиатуры ----------
+   491→   491→  useEffect(() => {
+   492→   492→    const canvas = canvasRef.current
+   493→   493→    if (!canvas) return
+   494→   494→
+   495→   495→    const getPos = (e: PointerEvent | WheelEvent) => {
+   496→   496→      const r = canvas.getBoundingClientRect()
+   497→   497→      return { x: e.clientX - r.left, y: e.clientY - r.top }
+   498→   498→    }
+   499→   499→
+   500→   500→    const updateCoords = (plan: Pt | null) => {
+   501→   501→      if (!coordsRef.current) return
+   502→   502→      coordsRef.current.textContent = plan
+   503→   503→        ? `X: ${Math.round(plan.x)} · Y: ${Math.round(plan.y)} см`
+   504→   504→        : '—'
+   505→   505→    }
+   506→   506→
+   507→   507→    const updateCursorStyle = (plan: Pt | null) => {
+   508→   508→      if (spaceRef.current || toolRef.current === 'pan' || interRef.current.type === 'pan') {
+   509→   509→        canvas.style.cursor = interRef.current.type === 'pan' ? 'grabbing' : 'grab'
+   510→   510→        return
+   511→   511→      }
+   512→   512→      if (toolRef.current === 'wall' || placePresetRef.current) {
+   513→   513→        canvas.style.cursor = 'crosshair'
+   514→   514→        return
+   515→   515→      }
+   516→   516→      if (plan) {
+   517→   517→        const sel = docRef.current.objects.find((o) => o.id === selectedIdRef.current)
+   518→   518→        if (sel) {
+   519→   519→          const hp = rotateHandlePos(sel, 26 / viewRef.current.scale)
+   520→   520→          if (Math.hypot((hp.x - plan.x) * viewRef.current.scale, (hp.y - plan.y) * viewRef.current.scale) < 10) {
+   521→   521→            canvas.style.cursor = 'pointer'
+   522→   522→            return
+   523→   523→          }
+   524→   524→        }
+   525→   525→        if (docRef.current.room) {
+   526→   526→          for (const p of docRef.current.room) {
+   527→   527→            if (Math.hypot((p.x - plan.x) * viewRef.current.scale, (p.y - plan.y) * viewRef.current.scale) < 9) {
+   528→   528→              canvas.style.cursor = 'pointer'
+   529→   529→              return
+   530→   530→            }
+   531→   531→          }
+   532→   532→        }
+   533→   533→        for (let i = docRef.current.objects.length - 1; i >= 0; i--) {
+   534→   534→          if (pointInObject(docRef.current.objects[i], plan)) {
+   535→   535→            canvas.style.cursor = 'move'
+   536→   536→            return
+   537→   537→          }
+   538→   538→        }
+   539→   539→        const u = docRef.current.underlay
+   540→   540→        if (u && u.visible && pointInRect(u, plan)) {
+   541→   541→          canvas.style.cursor = 'move'
+   542→   542→          return
+   543→   543→        }
+   544→   544→      }
+   545→   545→      canvas.style.cursor = 'default'
+   546→   546→    }
+   547→   547→
+   548→   548→    const zoomAt = (px: number, py: number, factor: number) => {
+   549→   549→      const v = viewRef.current
+   550→   550→      const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor))
+   551→   551→      const plan = screenToPlan(px, py, v)
+   552→   552→      viewRef.current = { scale: ns, ox: px - plan.x * ns, oy: py - plan.y * ns }
+   553→   553→      userViewRef.current = true
+   554→   554→      draw()
+   555→   555→    }
+   556→   556→
+   557→   557→    const onPointerDown = (e: PointerEvent) => {
+   558→   558→      const pos = getPos(e)
+   559→   559→      const plan = screenToPlan(pos.x, pos.y, viewRef.current)
+   560→   560→
+   561→   561→      // панорамирование: средняя кнопка, пробел или инструмент «Рука»
+   562→   562→      if (e.button === 1 || spaceRef.current || (toolRef.current === 'pan' && e.button === 0)) {
+   563→   563→        e.preventDefault()
+   564→   564→        interRef.current = {
+   565→   565→          type: 'pan',
+   566→   566→          panStart: { ox: viewRef.current.ox, oy: viewRef.current.oy, px: pos.x, py: pos.y },
+   567→   567→        }
+   568→   568→        canvas.style.cursor = 'grabbing'
+   569→   569→        return
+   570→   570→      }
+   571→   571→
+   572→   572→      if (e.button === 2) {
+   573→   573→        // ПКМ в режиме стен — убрать последнюю точку
+   574→   574→        if (toolRef.current === 'wall' && drawingPtsRef.current && drawingPtsRef.current.length > 0) {
+   575→   575→          e.preventDefault()
+   576→   576→          const pts = [...drawingPtsRef.current]
+   577→   577→          pts.pop()
+   578→   578→          drawingPtsRef.current = pts
+   579→   579→          draw()
+   580→   580→        }
+   581→   581→        return
+   582→   582→      }
+   583→   583→      if (e.button !== 0) return
+   584→   584→
+   585→   585→      // рисование стен
+   586→   586→      if (toolRef.current === 'wall') {
+   587→   587→        const pts = drawingPtsRef.current ?? []
+   588→   588→        if (pts.length >= 3) {
+   589→   589→          const f = pts[0]
+   590→   590→          if (Math.hypot(plan.x - f.x, plan.y - f.y) * viewRef.current.scale < 12) {
+   591→   591→            closeRoom()
+   592→   592→            return
+   593→   593→          }
+   594→   594→        }
+   595→   595→        const step = docRef.current.gridStep
+   596→   596→        drawingPtsRef.current = [...pts, { x: snapValue(plan.x, step), y: snapValue(plan.y, step) }]
+   597→   597→        draw()
+   598→   598→        return
+   599→   599→      }
+   600→   600→
+   601→   601→      // размещение объекта
+   602→   602→      if (placePresetRef.current) {
+   603→   603→        placeObject(plan, e.shiftKey)
+   604→   604→        return
+   605→   605→      }
+   606→   606→
+   607→   607→      // инструмент выбора
+   608→   608→      if (underlaySelectedRef.current) {
+   609→   609→        underlaySelectedRef.current = false
+   610→   610→        setUnderlaySelected(false)
+   611→   611→      }
+   612→   612→      const sel = docRef.current.objects.find((o) => o.id === selectedIdRef.current)
+   613→   613→      if (sel) {
+   614→   614→        const hp = rotateHandlePos(sel, 26 / viewRef.current.scale)
+   615→   615→        if (Math.hypot((hp.x - plan.x) * viewRef.current.scale, (hp.y - plan.y) * viewRef.current.scale) < 10) {
+   616→   616→          pushHistory()
+   617→   617→          interRef.current = { type: 'rotate' }
+   618→   618→          canvas.style.cursor = 'grabbing'
+   619→   619→          return
+   620→   620→        }
+   621→   621→      }
+   622→   622→      if (docRef.current.room) {
+   623→   623→        const room = docRef.current.room
+   624→   624→        for (let i = 0; i < room.length; i++) {
+   625→   625→          if (Math.hypot((room[i].x - plan.x) * viewRef.current.scale, (room[i].y - plan.y) * viewRef.current.scale) < 9) {
+   626→   626→            pushHistory()
+   627→   627→            interRef.current = { type: 'vertex', vertexIdx: i }
+   628→   628→            dragVertexRef.current = i
+   629→   629→            return
+   630→   630→          }
+   631→   631→        }
+   632→   632→      }
+   633→   633→      for (let i = docRef.current.objects.length - 1; i >= 0; i--) {
+   634→   634→        const o = docRef.current.objects[i]
+   635→   635→        if (pointInObject(o, plan)) {
+   636→   636→          selectedIdRef.current = o.id
+   637→   637→          setSelectedId(o.id)
+   638→   638→          pushHistory()
+   639→   639→          interRef.current = { type: 'drag', grabDX: plan.x - o.x, grabDY: plan.y - o.y, moved: false }
+   640→   640→          canvas.style.cursor = 'grabbing'
+   641→   641→          return
+   642→   642→        }
+   643→   643→      }
+   644→   644→      // подложка — выделение и перетаскивание
+   645→   645→      const u = docRef.current.underlay
+   646→   646→      if (u && u.visible && pointInRect(u, plan)) {
+   647→   647→        selectedIdRef.current = null
+   648→   648→        setSelectedId(null)
+   649→   649→        underlaySelectedRef.current = true
+   650→   650→        setUnderlaySelected(true)
+   651→   651→        pushHistory()
+   652→   652→        interRef.current = { type: 'underlayDrag', grabDX: plan.x - u.x, grabDY: plan.y - u.y, moved: false }
+   653→   653→        canvas.style.cursor = 'grabbing'
+   654→   654→        return
+   655→   655→      }
+   656→   656→      // пустое место — снять выделение
+   657→   657→      selectedIdRef.current = null
+   658→   658→      setSelectedId(null)
+   659→   659→    }
+   660→   660→
+   661→   661→    const onPointerMove = (e: PointerEvent) => {
+   662→   662→      const pos = getPos(e)
+   663→   663→      const plan = screenToPlan(pos.x, pos.y, viewRef.current)
+   664→   664→      cursorPlanRef.current = plan
+   665→   665→      updateCoords(plan)
+   666→   666→      const it = interRef.current
+   667→   667→
+   668→   668→      if (it.type === 'pan' && it.panStart) {
+   669→   669→        viewRef.current = {
+   670→   670→          ...viewRef.current,
+   671→   671→          ox: it.panStart.ox + (pos.x - it.panStart.px),
+   672→   672→          oy: it.panStart.oy + (pos.y - it.panStart.py),
+   673→   673→        }
+   674→   674→        userViewRef.current = true
+   675→   675→        draw()
+   676→   676→        return
+   677→   677→      }
+   678→   678→
+   679→   679→      if (it.type === 'drag') {
+   680→   680→        const o = docRef.current.objects.find((x) => x.id === selectedIdRef.current)
+   681→   681→        const gdx = it.grabDX
+   682→   682→        const gdy = it.grabDY
+   683→   683→        if (!o || gdx === undefined || gdy === undefined) return
+   684→   684→        let nx = plan.x - gdx
+   685→   685→        let ny = plan.y - gdy
+   686→   686→        if (showGridRef.current && !e.altKey) {
+   687→   687→          const s = snapObjectPos({ x: nx, y: ny, w: o.w, h: o.h }, docRef.current.gridStep)
+   688→   688→          nx = s.x
+   689→   689→          ny = s.y
+   690→   690→        }
+   691→   691→        it.moved = true
+   692→   692→        applyDoc({ ...docRef.current, objects: docRef.current.objects.map((x) => (x.id === o.id ? { ...x, x: nx, y: ny } : x)) })
+   693→   693→        return
+   694→   694→      }
+   695→   695→
+   696→   696→      if (it.type === 'underlayDrag') {
+   697→   697→        const u = docRef.current.underlay
+   698→   698→        const gdx = it.grabDX
+   699→   699→        const gdy = it.grabDY
+   700→   700→        if (!u || gdx === undefined || gdy === undefined) return
+   701→   701→        let nx = plan.x - gdx
+   702→   702→        let ny = plan.y - gdy
+   703→   703→        if (showGridRef.current && !e.altKey) {
+   704→   704→          nx = snapValue(nx - u.w / 2, docRef.current.gridStep) + u.w / 2
+   705→   705→          ny = snapValue(ny - u.h / 2, docRef.current.gridStep) + u.h / 2
+   706→   706→        }
+   707→   707→        it.moved = true
+   708→   708→        applyDoc({ ...docRef.current, underlay: { ...u, x: nx, y: ny } })
+   709→   709→        return
+   710→   710→      }
+   711→   711→
+   712→   712→      if (it.type === 'rotate') {
+   713→   713→        const o = docRef.current.objects.find((x) => x.id === selectedIdRef.current)
+   714→   714→        if (!o) return
+   715→   715→        let angle = (Math.atan2(plan.y - o.y, plan.x - o.x) * 180) / Math.PI + 90
+   716→   716→        if (!e.altKey) angle = Math.round(angle / 15) * 15
+   717→   717→        angle = ((((angle + 180) % 360) + 360) % 360) - 180
+   718→   718→        applyDoc({ ...docRef.current, objects: docRef.current.objects.map((x) => (x.id === o.id ? { ...x, angle } : x)) })
+   719→   719→        return
+   720→   720→      }
+   721→   721→
+   722→   722→      if (it.type === 'vertex' && it.vertexIdx !== undefined && docRef.current.room) {
+   723→   723→        const idx = it.vertexIdx
+   724→   724→        const step = docRef.current.gridStep
+   725→   725→        const np = e.altKey ? { x: plan.x, y: plan.y } : { x: snapValue(plan.x, step), y: snapValue(plan.y, step) }
+   726→   726→        const room = docRef.current.room.map((p, i) => (i === idx ? np : p))
+   727→   727→        applyDoc({ ...docRef.current, room })
+   728→   728→        return
+   729→   729→      }
+   730→   730→
+   731→   731→      // без зажатой кнопки: призрак и курсор
+   732→   732→      if (placePresetRef.current) {
+   733→   733→        const p = placePresetRef.current
+   734→   734→        let gx = plan.x
+   735→   735→        let gy = plan.y
+   736→   736→        if (showGridRef.current) {
+   737→   737→          const s = snapObjectPos({ x: gx, y: gy, w: p.w, h: p.h }, docRef.current.gridStep)
+   738→   738→          gx = s.x
+   739→   739→          gy = s.y
+   740→   740→        }
+   741→   741→        ghostRef.current = { id: 'ghost', presetId: p.id, name: p.name, x: gx, y: gy, w: p.w, h: p.h, angle: 0, color: p.color }
+   742→   742→        draw()
+   743→   743→      } else if (toolRef.current === 'wall' && drawingPtsRef.current) {
+   744→   744→        draw()
+   745→   745→      }
+   746→   746→      updateCursorStyle(plan)
+   747→   747→    }
+   748→   748→
+   749→   749→    const onPointerUp = () => {
+   750→   750→      const it = interRef.current
+   751→   751→      if ((it.type === 'drag' || it.type === 'underlayDrag') && !it.moved) {
+   752→   752→        // клик без перемещения — убрать пустой шаг истории
+   753→   753→        historyRef.current.past.pop()
+   754→   754→        setHist({ p: historyRef.current.past.length, f: historyRef.current.future.length })
+   755→   755→      }
+   756→   756→      if (it.type === 'vertex') dragVertexRef.current = null
+   757→   757→      interRef.current = { type: 'none' }
+   758→   758→      updateCursorStyle(cursorPlanRef.current)
+   759→   759→    }
+   760→   760→
+   761→   761→    const onWheel = (e: WheelEvent) => {
+   762→   762→      e.preventDefault()
+   763→   763→      const pos = getPos(e)
+   764→   764→      const factor = Math.exp(-e.deltaY * 0.0012)
+   765→   765→      zoomAt(pos.x, pos.y, factor)
+   766→   766→    }
+   767→   767→
+   768→   768→    const onDoubleClick = () => {
+   769→   769→      if (toolRef.current === 'wall' && drawingPtsRef.current && drawingPtsRef.current.length >= 3) {
+   770→   770→        closeRoom()
+   771→   771→      }
+   772→   772→    }
+   773→   773→
+   774→   774→    const onContextMenu = (e: MouseEvent) => e.preventDefault()
+   775→   775→
+   776→   776→    const onKeyDown = (e: KeyboardEvent) => {
+   777→   777→      const target = e.target as HTMLElement | null
+   778→   778→      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return
+   779→   779→
+   780→   780→      if (e.code === 'Space') {
+   781→   781→        if (!spaceRef.current) spaceRef.current = true
+   782→   782→        e.preventDefault()
+   783→   783→        updateCursorStyle(cursorPlanRef.current)
+   784→   784→        return
+   785→   785→      }
+   786→   786→
+   787→   787→      const mod = e.ctrlKey || e.metaKey
+   788→   788→
+   789→   789→      if (mod && e.code === 'KeyZ') {
+   790→   790→        e.preventDefault()
+   791→   791→        if (e.shiftKey) redo()
+   792→   792→        else undo()
+   793→   793→        return
+   794→   794→      }
+   795→   795→      if (mod && e.code === 'KeyY') {
+   796→   796→        e.preventDefault()
+   797→   797→        redo()
+   798→   798→        return
+   799→   799→      }
+   800→   800→      if (mod && e.code === 'KeyD') {
+   801→   801→        e.preventDefault()
+   802→   802→        if (selectedIdRef.current) duplicateObject(selectedIdRef.current)
+   803→   803→        return
+   804→   804→      }
+   805→   805→
+   806→   806→      if (e.key === 'Escape') {
+   807→   807→        if (drawingPtsRef.current) {
+   808→   808→          drawingPtsRef.current = null
+   809→   809→          draw()
+   810→   810→        } else if (placePresetRef.current) {
+   811→   811→          placePresetRef.current = null
+   812→   812→          setPlacePreset(null)
+   813→   813→          ghostRef.current = null
+   814→   814→          draw()
+   815→   815→        } else if (selectedIdRef.current) {
+   816→   816→          selectedIdRef.current = null
+   817→   817→          setSelectedId(null)
+   818→   818→        } else if (underlaySelectedRef.current) {
+   819→   819→          underlaySelectedRef.current = false
+   820→   820→          setUnderlaySelected(false)
+   821→   821→        }
+   822→   822→        return
+   823→   823→      }
+   824→   824→
+   825→   825→      if (e.key === 'Enter' && drawingPtsRef.current) {
+   826→   826→        closeRoom()
+   827→   827→        return
+   828→   828→      }
+   829→   829→
+   830→   830→      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIdRef.current) {
+   831→   831→        e.preventDefault()
+   832→   832→        deleteObject(selectedIdRef.current)
+   833→   833→        return
+   834→   834→      }
+   835→   835→
+   836→   836→      if (e.code === 'KeyR' && selectedIdRef.current) {
+   837→   837→        const o = docRef.current.objects.find((x) => x.id === selectedIdRef.current)
+   838→   838→        if (o) {
+   839→   839→          pushHistory()
+   840→   840→          const d = e.shiftKey ? -90 : 90
+   841→   841→          updateObject(o.id, { angle: ((((o.angle + d + 180) % 360) + 360) % 360) - 180 })
+   842→   842→        }
+   843→   843→        return
+   844→   844→      }
+   845→   845→
+   846→   846→      if (e.code === 'KeyV' || e.code === 'Digit1') handleToolChange('select')
+   847→   847→      if (e.code === 'KeyW' || e.code === 'Digit2') handleToolChange('wall')
+   848→   848→      if (e.code === 'KeyH' || e.code === 'Digit3') handleToolChange('pan')
+   849→   849→
+   850→   850→      // стрелки — точное перемещение
+   851→   851→      if (selectedIdRef.current && e.key.startsWith('Arrow')) {
+   852→   852→        e.preventDefault()
+   853→   853→        const o = docRef.current.objects.find((x) => x.id === selectedIdRef.current)
+   854→   854→        if (!o) return
+   855→   855→        const base = showGridRef.current ? docRef.current.gridStep : 10
+   856→   856→        const step = e.shiftKey ? 1 : base
+   857→   857→        let dx = 0
+   858→   858→        let dy = 0
+   859→   859→        if (e.key === 'ArrowLeft') dx = -step
+   860→   860→        if (e.key === 'ArrowRight') dx = step
+   861→   861→        if (e.key === 'ArrowUp') dy = -step
+   862→   862→        if (e.key === 'ArrowDown') dy = step
+   863→   863→        const now = Date.now()
+   864→   864→        if (now - lastNudgeRef.current > 600) pushHistory()
+   865→   865→        lastNudgeRef.current = now
+   866→   866→        applyDoc({ ...docRef.current, objects: docRef.current.objects.map((x) => (x.id === o.id ? { ...x, x: o.x + dx, y: o.y + dy } : x)) })
+   867→   867→      }
+   868→   868→    }
+   869→   869→
+   870→   870→    const onKeyUp = (e: KeyboardEvent) => {
+   871→   871→      if (e.code === 'Space') {
+   872→   872→        spaceRef.current = false
+   873→   873→        updateCursorStyle(cursorPlanRef.current)
+   874→   874→      }
+   875→   875→    }
+   876→   876→
+   877→   877→    canvas.addEventListener('pointerdown', onPointerDown)
+   878→   878→    window.addEventListener('pointermove', onPointerMove)
+   879→   879→    window.addEventListener('pointerup', onPointerUp)
+   880→   880→    canvas.addEventListener('wheel', onWheel, { passive: false })
+   881→   881→    canvas.addEventListener('dblclick', onDoubleClick)
+   882→   882→    canvas.addEventListener('contextmenu', onContextMenu)
+   883→   883→    window.addEventListener('keydown', onKeyDown)
+   884→   884→    window.addEventListener('keyup', onKeyUp)
+   885→   885→
+   886→   886→    return () => {
+   887→   887→      canvas.removeEventListener('pointerdown', onPointerDown)
+   888→   888→      window.removeEventListener('pointermove', onPointerMove)
+   889→   889→      window.removeEventListener('pointerup', onPointerUp)
+   890→   890→      canvas.removeEventListener('wheel', onWheel)
+   891→   891→      canvas.removeEventListener('dblclick', onDoubleClick)
+   892→   892→      canvas.removeEventListener('contextmenu', onContextMenu)
+   893→   893→      window.removeEventListener('keydown', onKeyDown)
+   894→   894→      window.removeEventListener('keyup', onKeyUp)
+   895→   895→    }
+   896→   896→  }, [
+   897→   897→    applyDoc,
+   898→   898→    closeRoom,
+   899→   899→    deleteObject,
+   900→   900→    duplicateObject,
+   901→   901→    draw,
+   902→   902→    fitView,
+   903→   903→    handleToolChange,
+   904→   904→    placeObject,
+   905→   905→    pushHistory,
+   906→   906→    redo,
+   907→   907→    undo,
+   908→   908→    updateObject,
+   909→   909→  ])
+   910→   910→
+   911→   911→  const selected = doc.objects.find((o) => o.id === selectedId) ?? null
+   912→   912→  const empty = !doc.room && doc.objects.length === 0 && !doc.underlay
+   913→   913→
+   914→   914→  const hint = tool === 'wall'
+   915→   915→    ? 'Кликайте по углам комнаты · Enter или клик по первой точке — замкнуть · ПКМ — убрать точку · Esc — отмена'
+   916→   916→    : placePreset
+   917→   917→      ? `Размещение: ${placePreset.name} — кликните на плане · Shift+клик — несколько · Esc — отмена`
+   918→   918→      : underlaySelected
+   919→   919→        ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
+   920→   920→        : null
+   921→   921→
+   922→   922→  return (
+   923→   923→    <div className="flex h-[100dvh] min-h-0 flex-col bg-[#F6F1E9] text-[#3D3428]">
+   924→   924→      <TopBar
+   925→   925→        tool={tool}
+   926→   926→        setTool={handleToolChange}
+   927→   927→        canUndo={hist.p > 0}
+   928→   928→        canRedo={hist.f > 0}
+   929→   929→        onUndo={undo}
+   930→   930→        onRedo={redo}
+   931→   931→        onFit={() => {
+   932→   932→          userViewRef.current = false
+   933→   933→          fitView()
+   934→   934→          draw()
+   935→   935→        }}
+   936→   936→        onZoomIn={() => {
+   937→   937→          zoomCenter(1.25)
+   938→   938→        }}
+   939→   939→        onZoomOut={() => {
+   940→   940→          zoomCenter(0.8)
+   941→   941→        }}
+   942→   942→        savedAt={savedAt}
+   943→   943→        onNew={handleNew}
+   944→   944→        onImportClick={() => fileInputRef.current?.click()}
+   945→   945→        onUnderlayClick={() => underlayInputRef.current?.click()}
+   946→   946→        hasUnderlay={!!doc.underlay}
+   947→   947→        onExportPNG={() => {
+   948→   948→          exportPNG(docRef.current)
+   949→   949→          toast.success('PNG-файл скачивается…')
+   950→   950→        }}
+   951→   951→        onExportJSON={() => {
+   952→   952→          exportJSON(docRef.current, showGridRef.current)
+   953→   953→          toast.success('JSON-файл скачивается…')
+   954→   954→        }}
+   955→   955→      />
+   956→   956→
+   957→   957→      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+   958→   958→        {/* Каталог */}
+   959→   959→        <aside className="order-2 max-h-52 w-full shrink-0 overflow-hidden border-t border-[#E7DECF] bg-[#FBF7EF] lg:order-1 lg:max-h-none lg:w-52 lg:border-t-0 lg:border-r xl:w-60">
+   960→   960→          <Catalog placePreset={placePreset} onPlace={handlePickPreset} />
+   961→   961→        </aside>
+   962→   962→
+   963→   963→        {/* Холст */}
+   964→   964→        <main className="relative order-1 min-h-[44vh] flex-1 lg:order-2 lg:min-h-0" aria-label="План помещения">
+   965→   965→          <div ref={wrapRef} className="absolute inset-0">
+   966→   966→            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none select-none" />
+   967→   967→          </div>
+   968→   968→
+   969→   969→          {hint && (
+   970→   970→            <div className="pointer-events-none absolute top-3 left-1/2 z-10 max-w-[92%] -translate-x-1/2 rounded-full bg-[#3D3428]/85 px-4 py-1.5 text-center text-[11px] font-medium text-[#FBF7EF] shadow-lg">
+   971→   971→              {hint}
+   972→   972→            </div>
+   973→   973→          )}
+   974→   974→
+   975→   975→          {empty && !hint && (
+   976→   976→            <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+   977→   977→              <div className="pointer-events-auto max-w-sm rounded-2xl border border-[#EAE0CE] bg-[#FBF7EF]/95 p-6 text-center shadow-xl">
+   978→   978→                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F4E8D4]">
+   979→   979→                  <Ruler className="h-6 w-6 text-[#E8730C]" />
+   980→   980→                </div>
+   981→   981→                <h2 className="text-lg font-bold text-[#3D3428]">Нарисуйте планировку</h2>
+   982→   982→                <ol className="mt-2 space-y-1 text-left text-xs leading-relaxed text-[#6B5D4F]">
+   983→   983→                  <li>
+   984→   984→                    <b>1.</b> Инструментом «Стены» кликните углы комнаты в метрах от угла — контур замкнётся автоматически.
+   985→   985→                  </li>
+   986→   986→                  <li>
+   987→   987→                    <b>2.</b> Выберите мебель в каталоге и кликните на плане, чтобы поставить.
+   988→   988→                  </li>
+   989→   989→                  <li>
+   990→   990→                    <b>3.</b> Перетаскивайте объекты мышью, вращайте за оранжевую ручку, задавайте точные размеры справа.
+   991→   991→                  </li>
+   992→   992→                </ol>
+   993→   993→                <Button className="mt-4 h-9 bg-[#E8730C] text-sm font-semibold text-white shadow-sm hover:bg-[#D4660A]" onClick={startWallDrawing}>
+   994→   994→                  <PencilLine className="mr-1.5 h-4 w-4" /> Нарисовать стены
+   995→   995→                </Button>
+   996→   996→              </div>
+   997→   997→            </div>
+   998→   998→          )}
+   999→   999→        </main>
+  1000→  1000→
+  1001→  1001→        {/* Свойства */}
+  1002→  1002→        <aside className="order-3 max-h-60 w-full shrink-0 overflow-hidden border-t border-[#E7DECF] bg-[#FBF7EF] lg:max-h-none lg:w-72 lg:border-t-0 lg:border-l">
+  1003→  1003→          <PropertiesPanel
+  1004→  1004→            doc={doc}
+  1005→  1005→            showGrid={showGrid}
+  1006→  1006→            selected={selected}
+  1007→  1007→            underlay={doc.underlay}
+  1008→  1008→            underlaySelected={underlaySelected}
+  1009→  1009→            onUpdateObject={updateObject}
+  1010→  1010→            onCommit={() => pushHistory()}
+  1011→  1011→            onDeleteObject={deleteObject}
+  1012→  1012→            onDuplicateObject={duplicateObject}
+  1013→  1013→            onClearRoom={clearRoom}
+  1014→  1014→            onSelectUnderlay={selectUnderlay}
+  1015→  1015→            onUpdateUnderlay={updateUnderlay}
+  1016→  1016→            onRemoveUnderlay={removeUnderlay}
+  1017→  1017→            onFitUnderlay={fitUnderlay}
+  1018→  1018→            onReplaceUnderlay={() => underlayInputRef.current?.click()}
+  1019→  1019→            onGridStepChange={(s) => applyDoc({ ...docRef.current, gridStep: s })}
+  1020→  1020→            onToggleGrid={(v) => setShowGrid(v)}
+  1021→  1021→          />
+  1022→  1022→        </aside>
+  1023→  1023→      </div>
+  1024→  1024→
+  1025→  1025→      {/* Статусная строка */}
+  1026→  1026→      <footer className="z-10 flex h-8 shrink-0 items-center justify-between border-t border-[#E7DECF] bg-[#FBF7EF] px-3 text-[11px] font-medium text-[#8B7D6B] sm:px-4">
+  1027→  1027→        <span className="truncate">
+  1028→  1028→          {tool === 'wall' ? 'Режим: рисование стен' : tool === 'pan' ? 'Режим: перетаскивание холста' : 'Режим: выбор и редактирование'} · колесо — масштаб, пробел — панорама
+  1029→  1029→        </span>
+  1030→  1030→        <div className="flex shrink-0 items-center gap-3 tabular-nums sm:gap-4">
+  1031→  1031→          <span ref={coordsRef} className="hidden sm:inline">
+  1032→  1032→            —
+  1033→  1033→          </span>
+  1034→  1034→          <span>
+  1035→  1035→            Масштаб: <span ref={zoomRef}>—</span>
+  1036→  1036→          </span>
+  1037→  1037→          <span className="hidden md:inline">Объектов: {doc.objects.length}</span>
+  1038→  1038→        </div>
+  1039→  1039→      </footer>
+  1040→  1040→
+  1041→  1041→      <input ref={fileInputRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
+  1042→  1042→      <input
+  1043→  1043→        ref={underlayInputRef}
+  1044→  1044→        type="file"
+  1045→  1045→        accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+  1046→  1046→        className="hidden"
+  1047→  1047→        onChange={handleUnderlayFile}
+  1048→  1048→      />
+  1049→  1049→    </div>
+  1050→  1050→  )
+  1051→  1051→}
+  1052→  1052→
