@@ -145,3 +145,19 @@ Stage Summary:
 - Точка отката зафиксирована: коммит 093c819 = тег v1.0 = рабочее состояние после Task 6 (перегородки + двери/окна + слои + ластик + рулетка + этажи + миграция сейвов; live на room-planner-ru.surge.sh)
 - Автономный архив исходников: download/room-planner-checkpoint-v1.0-2026-09-21.zip
 - Все дальнейшие изменения кода теперь безопасны: в любой момент git reset --hard v1.0 вернёт проект к этому состоянию
+
+---
+Task ID: 8
+Agent: main (Super Z)
+Task: Выгрузить проект на GitHub (https://github.com/varfolomeevart-web/planer.git) — В ПРОЦЕССЕ
+
+Work Log:
+- git ls-remote с токеном: успех (репозиторий пустой, веток нет), токен читает
+- git push -u origin main --tags → 403 «Permission to varfolomeevart-web/planer.git denied»
+- Диагностика через API: repos/... вернул permissions push:true (роль владельца), но пробная запись PUT /contents/write-probe.txt → 403 «Resource not accessible by personal access token»
+- ВЫВОД: fine-grained PAT не имеет Repository permission «Contents: Read and write» (только Metadata: Read по умолчанию)
+- remote origin уже добавлен в .git/config (с токеном в URL); после получения нового токена: git remote set-url origin <URL с новым токеном> && git push -u origin main --tags
+
+Stage Summary:
+- Чекпоинт v1.0 (коммит 093c819, коммит worklog 2a1d3e9) готов к пушу, локально в безопасности
+- БЛОКЕР: ожидается от пользователя новый токен с правом Contents: Read and write (или classic с scope repo)
