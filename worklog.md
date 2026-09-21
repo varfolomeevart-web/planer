@@ -156,8 +156,13 @@ Work Log:
 - git push -u origin main --tags → 403 «Permission to varfolomeevart-web/planer.git denied»
 - Диагностика через API: repos/... вернул permissions push:true (роль владельца), но пробная запись PUT /contents/write-probe.txt → 403 «Resource not accessible by personal access token»
 - ВЫВОД: fine-grained PAT не имеет Repository permission «Contents: Read and write» (только Metadata: Read по умолчанию)
-- remote origin уже добавлен в .git/config (с токеном в URL); после получения нового токена: git remote set-url origin <URL с новым токеном> && git push -u origin main --tags
+- remote origin уже добавлен; ПОСЛЕdiag: старый read-only токен УДАЛЁН из origin (сейчас origin = чистый https://github.com/varfolomeevart-web/planer.git)
+- Пользователь попросил: «создай env куда я укажу токен» — выполнено
+- .env дополнен: GITHUB_TOKEN (пустой, ждёт вставки), GITHUB_USER=varfolomeevart-web, GITHUB_REPO=planer; DATABASE_URL сохранён без изменений; .env* в .gitignore (строка 34) — токен не попадёт в репозиторий и архивы
+- Создан scripts/push-github.sh (chmod +x): читает .env, токен подставляется ТОЛЬКО на время push, remote всегда хранит чистый URL, вывод push маскирует токен через sed; при пустом токене — понятная ошибка
+- Тест скрипта с пустым GITHUB_TOKEN: корректная остановка «GITHUB_TOKEN не заполнен в .env»
 
 Stage Summary:
 - Чекпоинт v1.0 (коммит 093c819, коммит worklog 2a1d3e9) готов к пушу, локально в безопасности
-- БЛОКЕР: ожидается от пользователя новый токен с правом Contents: Read and write (или classic с scope repo)
+- Пользователь вставляет новый токен (Contents: Read and write / classic repo) в /home/z/my-project/.env → GITHUB_TOKEN=...
+- После этого push одной командой: bash scripts/push-github.sh (выгружает main + теги, токен нигде не сохраняет)
