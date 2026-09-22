@@ -346,3 +346,4 @@ Stage Summary:
 - Работает вся механика планировщика: drag/сетка, R, Ctrl+D, отзеркаливание, ghost-превью, PNG/PDF-экспорт со схемами
 - Задеплоено на https://room-planner-ru.surge.sh и проверено онлайн
 - ОТКРЫТЫЙ ВОПРОС: GITHUB_TOKEN потерян при сбросе контейнера — нужен новый токен от пользователя для пуша (коммит готов)
+- ФИНАЛ: пользователь прислал новый GITHUB_TOKEN → обновлён .env → `bash scripts/push-github.sh`: aa37799..421d2b5 main -> main; `git ls-remote` подтверждает remote main = 421d2b5. Task 15 полностью закрыта (код + деплой + GitHub)
