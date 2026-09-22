@@ -1,6 +1,7 @@
 import type { Dimension, LayerVis, Partition, PlannerDoc, PlannerObject, Pt, Underlay } from './types'
 import { DEFAULT_LAYERS, ENG_COLORS } from './types'
-import { getPreset } from './presets'
+import { getPreset, PRESETS } from './presets'
+import { KLEN_STROKE } from './klen-presets'
 import { isStairs } from './floors'
 import { rotateHandlePos } from './geometry'
 
@@ -77,6 +78,44 @@ export function preloadUnderlayImage(src: string): Promise<void> {
     img.onerror = () => reject(new Error('underlay load failed'))
     img.src = src
   })
+}
+
+// ---------- кэш картинок пресетов (раздел «Клён»: схемы оборудования) ----------
+
+const presetImgCache = new Map<string, HTMLImageElement>()
+let presetImgLoadCb: (() => void) | null = null
+
+function getPresetImage(src: string): HTMLImageElement | null {
+  let img = presetImgCache.get(src)
+  if (!img) {
+    img = new Image()
+    img.onload = () => presetImgLoadCb?.()
+    img.src = src
+    presetImgCache.set(src, img)
+    return null
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null
+}
+
+/** Предзагрузка всех картинок пресетов (для экспорта PNG/PDF) */
+export function preloadPresetImages(): Promise<void> {
+  const srcs = [...new Set(PRESETS.map((p) => p.img).filter((s): s is string => !!s))]
+  return Promise.all(
+    srcs.map(
+      (src) =>
+        new Promise<void>((resolve) => {
+          const cached = presetImgCache.get(src)
+          if (cached && cached.complete && cached.naturalWidth > 0) return resolve()
+          const img = new Image()
+          img.onload = () => {
+            presetImgCache.set(src, img)
+            resolve()
+          }
+          img.onerror = () => resolve()
+          img.src = src
+        }),
+    ),
+  ).then(() => undefined)
 }
 
 export function fmtLen(cm: number): string {
@@ -1004,7 +1043,23 @@ function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { sca
     ctx.fillRect(-o.w / 2, -o.h / 2, o.w, o.h)
     ctx.restore()
   }
-  drawGlyph(ctx, o.presetId, o.color, o.w, o.h, view.scale)
+  // пресет с картинкой-схемой (раздел «Клён»): зелёная подложка + схема из каталога
+  const presetImg = getPreset(o.presetId).img
+  if (presetImg) {
+    ctx.save()
+    ctx.scale(view.scale, view.scale)
+    roundRectPath(ctx, -o.w / 2, -o.h / 2, o.w, o.h, 1.5)
+    ctx.fillStyle = o.color
+    ctx.fill()
+    ctx.lineWidth = 1.4 / view.scale
+    ctx.strokeStyle = KLEN_STROKE
+    ctx.stroke()
+    const img = getPresetImage(presetImg)
+    if (img) ctx.drawImage(img, -o.w / 2, -o.h / 2, o.w, o.h)
+    ctx.restore()
+  } else {
+    drawGlyph(ctx, o.presetId, o.color, o.w, o.h, view.scale)
+  }
   if (selected) {
     ctx.save()
     ctx.scale(view.scale, view.scale)
@@ -1288,6 +1343,7 @@ export function drawScene(
   view: { scale: number; ox: number; oy: number },
   ui: DrawUI,
 ) {
+  presetImgLoadCb = ui.onImageLoad ?? null
   ctx.fillStyle = COLORS.bg
   ctx.fillRect(0, 0, cssW, cssH)
 

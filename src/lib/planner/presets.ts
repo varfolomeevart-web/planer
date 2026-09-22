@@ -1,4 +1,5 @@
 import { ENG_COLORS, type ObjLayer } from './types'
+import { KLEN_PRESETS } from './klen-presets'
 
 export interface Preset {
   id: string
@@ -12,6 +13,8 @@ export interface Preset {
   layer?: ObjLayer
   /** лестница: пунктир на своём этаже, целиком — выше */
   showNext?: boolean
+  /** картинка-схема вместо векторного глифа (раздел «Клён») */
+  img?: string
 }
 
 export const CATEGORIES = [
@@ -20,6 +23,7 @@ export const CATEGORIES = [
   { id: 'kitchen', name: 'Кухня' },
   { id: 'bath', name: 'Санузел' },
   { id: 'cafe', name: 'Кафе' },
+  { id: 'klen', name: 'Клён' },
   { id: 'stairs', name: 'Лестницы' },
   { id: 'doors', name: 'Двери' },
   { id: 'windows', name: 'Окна' },
@@ -95,10 +99,15 @@ export const PRESETS: Preset[] = [
   { id: 'warm_floor', name: 'Электр. тёплый пол', category: 'eng', w: 150, h: 100, color: ENG_COLORS.electric.fill, layer: 'electric' },
   { id: 'motion_sensor', name: 'Датчик движения', category: 'eng', w: 16, h: 16, color: ENG_COLORS.electric.fill, layer: 'electric' },
   { id: 'cable_tray', name: 'Кабель-канал', category: 'eng', w: 120, h: 8, color: ENG_COLORS.electric.fill, layer: 'electric' },
+  // Клён: оборудование для кафе из каталога klenmarket.ru (схемы вида сверху)
+  ...KLEN_PRESETS,
   // Разное
   { id: 'plant', name: 'Растение', category: 'misc', w: 40, h: 40, color: '#C7D2BB' },
   { id: 'custom', name: 'Свой объект', category: 'misc', w: 100, h: 80, color: '#EDE3D3' },
 ]
+
+/** Зелёный цвет раздела «Клён» (рамки карточек и объектов на плане) */
+export const KLEN_COLOR = '#5D8A4E'
 
 export function getPreset(id: string): Preset {
   return PRESETS.find((p) => p.id === id) ?? PRESETS[PRESETS.length - 1]

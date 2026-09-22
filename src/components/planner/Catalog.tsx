@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState } from 'react'
-import { CATEGORIES, ENG_GROUPS, PRESETS, type Preset } from '@/lib/planner/presets'
+import { CATEGORIES, ENG_GROUPS, KLEN_COLOR, PRESETS, type Preset } from '@/lib/planner/presets'
 import { ENG_COLORS } from '@/lib/planner/types'
 import { FurnitureIcon } from './FurnitureIcon'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,7 @@ export function Catalog({ placePreset, onPlace }: Props) {
   const renderCard = (p: Preset) => {
     const engCol = p.layer && p.layer !== 'furniture' ? ENG_COLORS[p.layer] : null
     const active = placePreset?.id === p.id
+    const frame = engCol ? engCol.stroke : p.category === 'klen' ? KLEN_COLOR : null
     return (
       <button
         key={p.id}
@@ -27,11 +28,21 @@ export function Catalog({ placePreset, onPlace }: Props) {
           'group flex flex-col items-center gap-1 rounded-xl border-2 bg-white p-2.5 text-center transition-all hover:border-[#E8730C]/60 hover:shadow-md',
           active ? 'border-[#E8730C] bg-[#FDF3E7] shadow-sm' : 'border-[#EFE8DB]',
         )}
-        style={engCol && !active ? { borderColor: `${engCol.stroke}55` } : undefined}
+        style={frame && !active ? { borderColor: `${frame}55` } : undefined}
         title={`Добавить: ${p.name} (${p.w}×${p.h} см)`}
       >
-        <FurnitureIcon presetId={p.id} color={p.color} w={p.w} h={p.h} size={52} />
-        <span className="flex items-center gap-1 text-xs leading-tight font-semibold text-[#3D3428]">
+        {p.img ? (
+          <img
+            src={p.img}
+            alt=""
+            draggable={false}
+            className="shrink-0 rounded-md object-contain"
+            style={{ width: 52, height: 52, backgroundColor: p.color }}
+          />
+        ) : (
+          <FurnitureIcon presetId={p.id} color={p.color} w={p.w} h={p.h} size={52} />
+        )}
+        <span className="line-clamp-2 flex items-center gap-1 text-xs leading-tight font-semibold text-[#3D3428]">
           {engCol && (
             <span
               className="h-2 w-2 shrink-0 rounded-full"
@@ -105,7 +116,7 @@ export function Catalog({ placePreset, onPlace }: Props) {
 
       <div className="border-t border-[#EAE2D5] p-3">
         <button
-          onClick={() => onPlace(PRESETS[PRESETS.length - 1])}
+          onClick={() => onPlace(PRESETS.find((p) => p.id === 'custom') ?? PRESETS[PRESETS.length - 1])}
           className={cn(
             'flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-3 py-2.5 text-sm font-semibold transition-colors',
             placePreset?.id === 'custom'

@@ -2,7 +2,7 @@ import type { Floor, PlannerDoc } from './types'
 import { normalizeDoc } from './migrate'
 import { currentFloor } from './types'
 import { objectsBBox, pointsBBox, rectCorners, unionBBox } from './geometry'
-import { drawScene, preloadUnderlayImage } from './draw'
+import { drawScene, preloadPresetImages, preloadUnderlayImage } from './draw'
 
 export interface SaveFile {
   version: number
@@ -88,6 +88,8 @@ async function renderFloorCanvas(doc: PlannerDoc, floor: Floor): Promise<HTMLCan
       // без подложки, но план всё равно экспортируем
     }
   }
+  // картинки-схемы пресетов («Клён») тоже должны быть готовы
+  await preloadPresetImages()
 
   // заливаем весь холст фоном (включая нижнюю полосу с подписью)
   ctx.fillStyle = '#FBF7EF'
