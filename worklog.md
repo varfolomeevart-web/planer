@@ -347,3 +347,16 @@ Stage Summary:
 - Задеплоено на https://room-planner-ru.surge.sh и проверено онлайн
 - ОТКРЫТЫЙ ВОПРОС: GITHUB_TOKEN потерян при сбросе контейнера — нужен новый токен от пользователя для пуша (коммит готов)
 - ФИНАЛ: пользователь прислал новый GITHUB_TOKEN → обновлён .env → `bash scripts/push-github.sh`: aa37799..421d2b5 main -> main; `git ls-remote` подтверждает remote main = 421d2b5. Task 15 полностью закрыта (код + деплой + GitHub)
+
+---
+Task ID: 16
+Agent: main (Super Z)
+Task: «v1.2» — отметить текущую версию аннотированным тегом (точка отката)
+
+Work Log:
+- Состав v1.2 = всё из v1.1 + Task 14 (экспорт PDF, aa37799) + Task 15 (раздел «Клён», 421d2b5)
+- Аннотированный тег v1.2 создан на HEAD, выгружен вместе с main через scripts/push-github.sh
+- Верификация git ls-remote: main и v1.2 на remote
+
+Stage Summary:
+- На GitHub три тега-отката: v1.0, v1.1, v1.2; latest main = v1.2
