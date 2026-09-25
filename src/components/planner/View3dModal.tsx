@@ -49,7 +49,7 @@ export function View3dModal({ doc, onClose }: Props) {
       c.width = pw
       c.height = ph
     }
-    render3d(c, currentFloor(docRef.current), stRef.current)
+    render3d(c, currentFloor(docRef.current), stRef.current, dpr)
   }, [])
 
   // при монтировании: предзагрузка схем, блокировка прокрутки страницы
