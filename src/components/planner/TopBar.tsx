@@ -323,7 +323,7 @@ export function TopBar({
             <span className="hidden md:inline">3D</span>
           </Button>
         </Tip>
-        <Tip label="Снимок" hint="3D-кадр с точки камеры · поставьте камеру инструментом «Камера» (C)">
+        <Tip label="Снимок" hint="2D-картинка зоны обзора камеры · поставьте камеру инструментом «Камера» (C)">
           <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onSnapshot}>
             <Camera className="mr-1 h-3.5 w-3.5" />
             <span className="hidden md:inline">Снимок</span>

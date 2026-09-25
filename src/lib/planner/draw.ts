@@ -1031,7 +1031,7 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
   ctx.restore()
 }
 
-function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { scale: number; ox: number; oy: number }, selected: boolean) {
+export function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { scale: number; ox: number; oy: number }, selected: boolean) {
   const sx = o.x * view.scale + view.ox
   const sy = o.y * view.scale + view.oy
   ctx.save()
@@ -1078,7 +1078,7 @@ function drawObject(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { sca
 }
 
 /** Призрак лестницы на своём этаже: пунктирный контур со ступенями */
-function drawStairsGhost(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { scale: number; ox: number; oy: number }) {
+export function drawStairsGhost(ctx: CanvasRenderingContext2D, o: PlannerObject, view: { scale: number; ox: number; oy: number }) {
   const wpx = o.w * view.scale
   const hpx = o.h * view.scale
   const cx = o.x * view.scale + view.ox
@@ -1289,7 +1289,7 @@ function drawScaleBar(ctx: CanvasRenderingContext2D, cssW: number, cssH: number,
   ctx.restore()
 }
 
-function drawUnderlay(
+export function drawUnderlay(
   ctx: CanvasRenderingContext2D,
   u: Underlay,
   view: { scale: number; ox: number; oy: number },
