@@ -1,4 +1,4 @@
-import type { Floor, PlannerObject, Pt } from './types'
+import type { Floor, LayerVis, PlannerObject, Pt } from './types'
 import { isDoorWindowPreset, getPreset } from './presets'
 import { objectCorners } from './geometry'
 
@@ -23,15 +23,15 @@ export interface View3dState {
 
 export const VIEW3D_DEFAULT: View3dState = { azimuth: -35, elevation: 35, zoom: 1, walls: 'hide' }
 
-const WALL_H = 270
+export const WALL_H = 270
 const PART_H = 250
 const SLAB_H = 12
 
 const FLOOR_FILL = '#F6F0E4'
 const FLOOR_EDGE = '#D8CBB6'
-const WALL_FILL = '#EFE6D6'
-const WALL_EDGE = '#B9A88C'
-const PART_FILL = '#E3D7C1'
+export const WALL_FILL = '#EFE6D6'
+export const WALL_EDGE = '#B9A88C'
+export const PART_FILL = '#E3D7C1'
 
 /** Высоты объектов, см (по пресетам; «Клён» — из каталога) */
 const PRESET_H: Record<string, number> = {
@@ -62,6 +62,12 @@ const PRESET_ZOFF: Record<string, number> = {
 
 /** Кэш картинок пресетов (SVG-схемы «Клён») для верхних граней */
 const imgCache = new Map<string, HTMLImageElement>()
+
+/** Догруженная картинка пресета (для рендера верхних граней) */
+export function get3dImage(src: string): HTMLImageElement | null {
+  const im = imgCache.get(src)
+  return im && im.complete && im.naturalWidth > 0 ? im : null
+}
 
 /** Предзагрузка схем всех объектов этажа (вызвать до первого рендера) */
 export function preload3dImages(floor: Floor): Promise<void> {
@@ -150,7 +156,7 @@ function fillPoly(
 }
 
 /** выпуклая оболочка (для тени: след + смещённый след) */
-function convexHull(pts: Pt[]): Pt[] {
+export function convexHull(pts: Pt[]): Pt[] {
   if (pts.length < 4) return pts.slice()
   const sorted = pts.slice().sort((p, q) => (p.x === q.x ? p.y - q.y : p.x - q.x))
   const cross = (o: Pt, a: Pt, b: Pt) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
@@ -173,7 +179,7 @@ function convexHull(pts: Pt[]): Pt[] {
 // ---------- профили объектов ----------
 
 /** Часть составного объекта: след в плане (мировые координаты) + высоты */
-interface Part {
+export interface Part {
   fp: Pt[]
   z0: number
   z1: number
@@ -218,7 +224,8 @@ function discPts(L: (x: number, y: number) => Pt, cx: number, cy: number, r: num
  * y — глубина (вниз плана); спинки/изголовья — у дальнего края y = -h/2
  * (как в 2D-схемах). Отзеркаливание (o.flip) применяется к локальной оси x.
  */
-function objectParts(o: PlannerObject): Part[] {
+/** Сборка объекта из объёмных частей (экспортируется для перспективного рендера) */
+export function objectParts(o: PlannerObject): Part[] {
   const preset = getPreset(o.presetId)
   const color = o.color || preset.color
   const w = o.w
@@ -933,4 +940,94 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
       }
     }
   }
+}
+
+// ---------- сборка сцены (общая для аксонометрии и снимка с камеры) ----------
+
+/** Отрезок вертикальной стены для 3D-рендеров */
+export interface WallSeg {
+  a: Pt
+  b: Pt
+  /** высота, см */
+  h: number
+  fill: string
+  stroke: string
+  kind: 'wall' | 'partition'
+}
+
+export interface Scene3d {
+  /** полигон пола (комната или fallback-прямоугольник вокруг объектов) */
+  floorPlan: Pt[]
+  walls: WallSeg[]
+  /** объекты с собранными объёмными частями */
+  objectsParts: { o: PlannerObject; parts: Part[] }[]
+  /** центр сцены (для определения внутренних нормалей) */
+  center: Pt
+  hasRoom: boolean
+}
+
+/**
+ * Сборка геометрии этажа для 3D-рендера: пол, стены, перегородки и объекты.
+ * layers — фильтр видимости инженерных слоёв (undefined — показывать всё).
+ */
+export function buildScene(floor: Floor, layers?: LayerVis): Scene3d {
+  const hasRoom = !!floor.room && floor.room.length >= 3
+  const objects = floor.objects.filter(
+    (o) => !isDoorWindowPreset(o.presetId) && (!layers || layers[o.layer ?? 'furniture']),
+  )
+  const objectsParts = objects.map((o) => ({ o, parts: objectParts(o) }))
+  const walls: WallSeg[] = []
+
+  if (hasRoom && floor.room) {
+    const room = floor.room
+    for (let i = 0; i < room.length; i++) {
+      walls.push({ a: room[i], b: room[(i + 1) % room.length], h: WALL_H, fill: WALL_FILL, stroke: WALL_EDGE, kind: 'wall' })
+    }
+  }
+  for (const part of floor.partitions) {
+    for (let i = 0; i + 1 < part.pts.length; i++) {
+      walls.push({ a: part.pts[i], b: part.pts[i + 1], h: PART_H, fill: PART_FILL, stroke: '#C4B394', kind: 'partition' })
+    }
+  }
+
+  let floorPlan: Pt[]
+  if (hasRoom && floor.room) {
+    floorPlan = floor.room.slice()
+  } else {
+    let x1 = Infinity
+    let y1 = Infinity
+    let x2 = -Infinity
+    let y2 = -Infinity
+    for (const b of objectsParts) {
+      for (const part of b.parts) {
+        for (const p of part.fp) {
+          if (p.x < x1) x1 = p.x
+          if (p.x > x2) x2 = p.x
+          if (p.y < y1) y1 = p.y
+          if (p.y > y2) y2 = p.y
+        }
+      }
+    }
+    if (!Number.isFinite(x1)) {
+      x1 = 0
+      y1 = 0
+      x2 = 600
+      y2 = 500
+    }
+    const pad = 60
+    floorPlan = [
+      { x: x1 - pad, y: y1 - pad },
+      { x: x2 + pad, y: y1 - pad },
+      { x: x2 + pad, y: y2 + pad },
+      { x: x1 - pad, y: y2 + pad },
+    ]
+  }
+
+  let cx = 0
+  let cy = 0
+  for (const p of floorPlan) {
+    cx += p.x
+    cy += p.y
+  }
+  return { floorPlan, walls, objectsParts, center: { x: cx / floorPlan.length, y: cy / floorPlan.length }, hasRoom }
 }

@@ -41,6 +41,10 @@ export interface DrawUI {
   selectedDimensionId: string | null
   /** рулетка: текущий замер */
   ruler: { a: Pt; b: Pt } | null
+  /** призрак устанавливаемой камеры (инструмент «Камера», фаза наведения) */
+  cameraGhost?: { x: number; y: number; angle: number } | null
+  /** активен ли инструмент «Камера» — подсветка маркера */
+  cameraTool?: boolean
   /** вызывается, когда картинка подложки догрузилась — для перерисовки */
   onImageLoad?: () => void
 }
@@ -1334,6 +1338,87 @@ function drawUnderlay(
   }
 }
 
+// ---------- маркер камеры ----------
+
+const CAM_WEDGE_R = 150 // радиус сектора обзора, см
+const CAM_HALF_FOV = 32.5 // половина угла обзора, град (обзор 65°)
+
+/** Маркер камеры на плане: сектор обзора, корпус с объективом и указатель направления */
+function drawCameraMark(
+  ctx: CanvasRenderingContext2D,
+  cam: { x: number; y: number; angle: number },
+  view: { scale: number; ox: number; oy: number },
+  opts: { ghost?: boolean; active?: boolean },
+) {
+  const px = cam.x * view.scale + view.ox
+  const py = cam.y * view.scale + view.oy
+  const rad = (cam.angle * Math.PI) / 180
+  const half = (CAM_HALF_FOV * Math.PI) / 180
+  const r = CAM_WEDGE_R * view.scale
+  // план угол φ (0 — вверх, по часовой) → канвас-угол φ − 90°
+  const a1 = rad - Math.PI / 2 - half
+  const a2 = rad - Math.PI / 2 + half
+
+  ctx.save()
+  if (opts.ghost) {
+    ctx.globalAlpha = 0.75
+    ctx.setLineDash([7, 5])
+  }
+
+  // сектор обзора
+  ctx.beginPath()
+  ctx.moveTo(px, py)
+  ctx.arc(px, py, r, a1, a2)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(232,115,12,0.14)'
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(232,115,12,0.65)'
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  // указатель направления
+  const tx = px + Math.cos(rad - Math.PI / 2) * 17
+  const ty = py + Math.sin(rad - Math.PI / 2) * 17
+  ctx.strokeStyle = '#3D3428'
+  ctx.lineWidth = 2
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(px, py)
+  ctx.lineTo(tx, ty)
+  ctx.stroke()
+  const hx = px + Math.cos(rad - Math.PI / 2 + 2.5) * 12
+  const hy = py + Math.sin(rad - Math.PI / 2 + 2.5) * 12
+  ctx.beginPath()
+  ctx.arc(hx, hy, 2.4, 0, Math.PI * 2)
+  ctx.fillStyle = '#3D3428'
+  ctx.fill()
+
+  // корпус с объективом
+  ctx.beginPath()
+  ctx.arc(px, py, 10, 0, Math.PI * 2)
+  ctx.fillStyle = '#E8730C'
+  ctx.fill()
+  ctx.strokeStyle = '#FFFFFF'
+  ctx.lineWidth = 2.5
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(px, py, 4, 0, Math.PI * 2)
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fill()
+
+  // подсветка активного инструмента
+  if (opts.active) {
+    ctx.beginPath()
+    ctx.arc(px, py, 15, 0, Math.PI * 2)
+    ctx.strokeStyle = 'rgba(232,115,12,0.8)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([4, 4])
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
 /** Полная отрисовка сцены. Ожидается, что ctx уже масштабирован под devicePixelRatio. */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
@@ -1435,6 +1520,10 @@ export function drawScene(
   for (const d of floor.dimensions) {
     drawDimension(ctx, d, view, d.id === ui.selectedDimensionId)
   }
+
+  // Камера для 3D-снимка и призрак установки
+  if (floor.camera) drawCameraMark(ctx, floor.camera, view, { active: ui.cameraTool === true })
+  if (ui.cameraGhost) drawCameraMark(ctx, ui.cameraGhost, view, { ghost: true })
 
   // Рисование стен/перегородок/размера в процессе
   if (ui.drawingPts && ui.drawingPts.length > 0) {

@@ -34,6 +34,15 @@ export interface Partition {
   pts: Pt[]
 }
 
+/** Камера для 3D-снимка: точка на плане и направление взгляда */
+export interface CameraMark {
+  /** координаты, см */
+  x: number
+  y: number
+  /** направление взгляда, градусы (0 — вверх плана, по часовой) */
+  angle: number
+}
+
 /** Выноска-размер: отрезок с подписью длины */
 export interface Dimension {
   id: string
@@ -70,6 +79,8 @@ export interface Floor {
   objects: PlannerObject[]
   dimensions: Dimension[]
   underlay: Underlay | null
+  /** точка съёмки для 3D-снимка (по одной на этаж) */
+  camera?: CameraMark | null
 }
 
 /** Видимость инженерных слоёв */
@@ -137,6 +148,7 @@ export function emptyFloor(name?: string): Floor {
     objects: [],
     dimensions: [],
     underlay: null,
+    camera: null,
   }
 }
 
