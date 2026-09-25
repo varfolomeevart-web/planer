@@ -23,7 +23,6 @@ import {
 import {
   Box,
   BrickWall,
-  Camera,
   CopyPlus,
   Eraser,
   FilePlus2,
@@ -74,9 +73,6 @@ interface Props {
   onExportPDF: () => void
   onExportJSON: () => void
   onOpen3d: () => void
-  onSnapshot: () => void
-  hasCamera: boolean
-  onDeleteCamera: () => void
   floors: Floor[]
   currentFloorId: string
   onSwitchFloor: (id: string) => void
@@ -94,7 +90,6 @@ const TOOLS: { id: Tool; label: string; icon: typeof MousePointer2; keys: string
   { id: 'erase', label: 'Ластик', icon: Eraser, keys: [['5'], ['E']], hint: 'клик по сегменту или вершине — стереть' },
   { id: 'ruler', label: 'Рулетка', icon: Ruler, keys: [['6']], hint: 'зажми и протяни вдоль расстояния' },
   { id: 'dimension', label: 'Размер', icon: MoveHorizontal, keys: [['7']], hint: 'клик — начало, клик — конец' },
-  { id: 'camera', label: 'Камера', icon: Camera, keys: [['8'], ['C']], hint: 'клик — точка съёмки, второй клик — направление взгляда · затем кнопка «Снимок» · Del — убрать камеру' },
   { id: 'pan', label: 'Рука', icon: Hand, keys: [['4'], ['H']], hint: 'тяни вид · пробел или стрелки — панорама' },
 ]
 
@@ -117,9 +112,6 @@ export function TopBar({
   onExportPDF,
   onExportJSON,
   onOpen3d,
-  onSnapshot,
-  hasCamera,
-  onDeleteCamera,
   floors,
   currentFloorId,
   onSwitchFloor,
@@ -323,20 +315,6 @@ export function TopBar({
             <span className="hidden md:inline">3D</span>
           </Button>
         </Tip>
-        <Tip label="Снимок" hint="2D-картинка зоны обзора камеры · поставьте камеру инструментом «Камера» (C)">
-          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onSnapshot}>
-            <Camera className="mr-1 h-3.5 w-3.5" />
-            <span className="hidden md:inline">Снимок</span>
-          </Button>
-        </Tip>
-        {hasCamera && (
-          <Tip label="Удалить камеру" hint="убрать точку съёмки с плана · вернуть можно Ctrl+Z">
-            <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#FBEBE4] hover:text-[#C0392B]" onClick={onDeleteCamera}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              <span className="hidden md:inline">Удалить камеру</span>
-            </Button>
-          </Tip>
-        )}
         <Tip label="PNG" hint="скачать план картинкой">
           <Button size="sm" className="h-8 bg-[#E8730C] text-xs text-white shadow-sm hover:bg-[#D4660A]" onClick={onExportPNG}>
             <ImageDown className="mr-1 h-3.5 w-3.5" />

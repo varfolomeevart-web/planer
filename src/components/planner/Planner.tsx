@@ -27,13 +27,11 @@ import { Catalog } from './Catalog'
 import { PropertiesPanel } from './PropertiesPanel'
 import { TopBar } from './TopBar'
 import { View3dModal } from './View3dModal'
-import { SnapshotModal } from './SnapshotModal'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { PencilLine, Ruler } from 'lucide-react'
 import {
   CURSOR_ARROW,
-  CURSOR_CAMERA,
   CURSOR_DIM,
   CURSOR_ERASE,
   CURSOR_GRAB,
@@ -74,7 +72,6 @@ export function Planner() {
   const [selectedPartitionId, setSelectedPartitionId] = useState<string | null>(null)
   const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null)
   const [view3dOpen, setView3dOpen] = useState(false)
-  const [snapOpen, setSnapOpen] = useState(false)
 
   // ---------- refs ----------
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -106,7 +103,6 @@ export function Planner() {
   const selectedDimensionIdRef = useRef<string | null>(null)
   const partitionVertexRef = useRef<number | null>(null)
   const rulerRef = useRef<{ a: Pt; b: Pt } | null>(null)
-  const camPlacingRef = useRef<{ x: number; y: number } | null>(null)
   const interRef = useRef<Interaction>({ type: 'none' })
   const historyRef = useRef<{ past: string[]; future: string[] }>({ past: [], future: [] })
 
@@ -212,20 +208,6 @@ export function Planner() {
       layers: docRef.current.layers,
       selectedDimensionId: selectedDimensionIdRef.current,
       ruler: rulerRef.current,
-      cameraGhost: (() => {
-        const placing = camPlacingRef.current
-        if (!placing) return null
-        const cur = cursorPlanRef.current
-        let ang = 0
-        const prev = currentFloor(docRef.current).camera
-        if (cur && Math.hypot(cur.x - placing.x, cur.y - placing.y) > 8) {
-          ang = ((((Math.atan2(cur.x - placing.x, -(cur.y - placing.y)) * 180) / Math.PI + 180) % 360) + 360) % 360 - 180
-        } else if (prev) {
-          ang = prev.angle
-        }
-        return { x: placing.x, y: placing.y, angle: ang }
-      })(),
-      cameraTool: toolRef.current === 'camera',
       onImageLoad: () => drawRef.current(),
     })
     if (zoomRef.current) zoomRef.current.textContent = `${Math.round(viewRef.current.scale * 100)}%`
@@ -354,7 +336,6 @@ export function Planner() {
       if (toolRef.current !== t) {
         drawingPtsRef.current = null
         rulerRef.current = null
-        camPlacingRef.current = null
       }
       if (t !== 'select') {
         placePresetRef.current = null
@@ -726,15 +707,6 @@ export function Planner() {
     [applyDoc],
   )
 
-  // ---------- камера ----------
-  const handleDeleteCamera = useCallback(() => {
-    const fl = currentFloor(docRef.current)
-    if (!fl.camera) return
-    pushHistory()
-    withFloors((f) => ({ ...f, camera: null }))
-    toast('Камера удалена', { icon: '🗑️' })
-  }, [pushHistory, withFloors])
-
   // ---------- подложка ----------
   const handleUnderlayFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -900,10 +872,6 @@ export function Planner() {
         canvas.style.cursor = CURSOR_DIM
         return
       }
-      if (toolRef.current === 'camera') {
-        canvas.style.cursor = CURSOR_CAMERA
-        return
-      }
       if (plan) {
         const fl = currentFloor(docRef.current)
         const vis = docRef.current.layers
@@ -979,7 +947,7 @@ export function Planner() {
       }
 
       if (e.button === 2) {
-        // ПКМ в режимах стен/перегородок/размеров — убрать последнюю точку; в режиме камеры — отменить установку
+        // ПКМ в режимах стен/перегородок/размеров — убрать последнюю точку
         if (
           (toolRef.current === 'wall' || toolRef.current === 'partition' || toolRef.current === 'dimension') &&
           drawingPtsRef.current &&
@@ -990,43 +958,10 @@ export function Planner() {
           pts.pop()
           drawingPtsRef.current = pts
           draw()
-        } else if (toolRef.current === 'camera' && camPlacingRef.current) {
-          e.preventDefault()
-          camPlacingRef.current = null
-          draw()
         }
         return
       }
       if (e.button !== 0) return
-
-      // камера: первый клик — точка, второй — направление взгляда
-      if (toolRef.current === 'camera') {
-        const placing = camPlacingRef.current
-        if (!placing) {
-          const p = snapPoint(plan)
-          camPlacingRef.current = { x: p.x, y: p.y }
-          cursorPlanRef.current = p
-        } else {
-          const aim = snapPoint(plan)
-          const dx = aim.x - placing.x
-          const dy = aim.y - placing.y
-          let angle = 0
-          const prev = currentFloor(docRef.current).camera
-          if (Math.hypot(dx, dy) > 8) {
-            angle = ((((Math.atan2(dx, -dy) * 180) / Math.PI + 180) % 360) + 360) % 360 - 180
-            if (!e.altKey) angle = Math.round(angle / 15) * 15
-          } else if (prev) {
-            angle = prev.angle
-          }
-          pushHistory()
-          withFloors((f) => ({ ...f, camera: { x: placing.x, y: placing.y, angle } }))
-          camPlacingRef.current = null
-          cursorPlanRef.current = null
-          toast.success('Камера установлена — нажмите «Снимок» для 3D-кадра')
-        }
-        draw()
-        return
-      }
 
       // рисование стен
       if (toolRef.current === 'wall') {
@@ -1232,15 +1167,6 @@ export function Planner() {
         return
       }
 
-      // камера в фазе наведения: призрак следит за курсором
-      if (toolRef.current === 'camera' && camPlacingRef.current) {
-        const snapped = snapPoint(plan)
-        cursorPlanRef.current = snapped
-        updateCoords(snapped)
-        draw()
-        return
-      }
-
       if (it.type === 'drag') {
         const o = currentFloor(docRef.current).objects.find((x) => x.id === selectedIdRef.current)
         const gdx = it.grabDX
@@ -1407,9 +1333,6 @@ export function Planner() {
           drawingPtsRef.current = null
           cursorPlanRef.current = null
           draw()
-        } else if (camPlacingRef.current) {
-          camPlacingRef.current = null
-          draw()
         } else if (rulerRef.current) {
           rulerRef.current = null
           draw()
@@ -1441,17 +1364,6 @@ export function Planner() {
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // в режиме камеры — удалить камеру
-        if (toolRef.current === 'camera' && !selectedIdRef.current && !selectedPartitionIdRef.current && !selectedDimensionIdRef.current) {
-          const fl = currentFloor(docRef.current)
-          if (fl.camera) {
-            e.preventDefault()
-            pushHistory()
-            withFloors((f) => ({ ...f, camera: null }))
-            toast('Камера удалена', { icon: '🗑️' })
-          }
-          return
-        }
         if (selectedIdRef.current) {
           e.preventDefault()
           deleteObject(selectedIdRef.current)
@@ -1467,18 +1379,6 @@ export function Planner() {
           deleteDimension(selectedDimensionIdRef.current)
           return
         }
-      }
-
-      // в режиме камеры R поворачивает камеру на 15° (Shift+R — обратно)
-      if (e.code === 'KeyR' && toolRef.current === 'camera' && !camPlacingRef.current) {
-        const fl = currentFloor(docRef.current)
-        if (fl.camera) {
-          pushHistory()
-          const d = e.shiftKey ? -15 : 15
-          const cam = fl.camera
-          withFloors((f) => ({ ...f, camera: { ...cam, angle: ((((cam.angle + d + 180) % 360) + 360) % 360) - 180 } }))
-        }
-        return
       }
 
       if (e.code === 'KeyR' && selectedIdRef.current) {
@@ -1504,7 +1404,6 @@ export function Planner() {
       if (e.code === 'KeyE' || (e.code === 'Digit5' && !e.shiftKey)) handleToolChange('erase')
       if (e.code === 'Digit6' && !e.shiftKey) handleToolChange('ruler')
       if (e.code === 'Digit7' && !e.shiftKey) handleToolChange('dimension')
-      if ((e.code === 'KeyC' || e.code === 'Digit8') && !e.shiftKey && !mod) handleToolChange('camera')
 
       // Стрелки: панорама вида (работает и во время рисования стены).
       // Shift+стрелки — сдвиг выделенного объекта на шаг сетки
@@ -1615,11 +1514,9 @@ export function Planner() {
             ? 'Размеры: кликните начало и конец — выноска зафиксирует длину · Esc — выход'
             : placePreset
               ? `Размещение: ${placePreset.name} — кликните на плане · Shift+клик — несколько · Esc — отмена`
-              : tool === 'camera'
-                ? 'Камера: клик — точка установки, второй клик — направление взгляда · R — поворот на 15°, Del — убрать · Esc — отмена'
-                : underlaySelected
-                ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
-                : null
+              : underlaySelected
+              ? 'Подложка выделена — перетащите её на плане или задайте точные значения в панели справа'
+              : null
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col bg-[#F6F1E9] text-[#3D3428]">
@@ -1665,16 +1562,6 @@ export function Planner() {
           }
           setView3dOpen(true)
         }}
-        onSnapshot={() => {
-          if (!fl.camera) {
-            toast.warning('Сначала поставьте камеру: инструмент «Камера» (C) — клик по плану, второй клик — направление взгляда')
-            handleToolChange('camera')
-            return
-          }
-          setSnapOpen(true)
-        }}
-        hasCamera={!!fl.camera}
-        onDeleteCamera={handleDeleteCamera}
         floors={doc.floors}
         currentFloorId={doc.currentFloorId}
         onSwitchFloor={switchFloorTo}
@@ -1774,9 +1661,7 @@ export function Planner() {
                     ? 'Режим: выноска-размер (7)'
                     : tool === 'pan'
                       ? 'Режим: перетаскивание холста'
-                      : tool === 'camera'
-                        ? 'Режим: камера (C) — точка съёмки для 3D-снимка'
-                        : 'Режим: выбор и редактирование'}
+                      : 'Режим: выбор и редактирование'}
           {' · '}
           {fl.name} ({doc.floors.length}) · колесо — масштаб · пробел или стрелки — панорама
         </span>
@@ -1805,7 +1690,6 @@ export function Planner() {
       />
 
       {view3dOpen && <View3dModal doc={doc} onClose={() => setView3dOpen(false)} />}
-      {snapOpen && fl.camera && <SnapshotModal doc={doc} onClose={() => setSnapOpen(false)} />}
     </div>
   )
 }

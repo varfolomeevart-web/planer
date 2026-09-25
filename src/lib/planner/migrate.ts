@@ -1,4 +1,4 @@
-import type { CameraMark, Dimension, Floor, LayerVis, PlannerDoc, PlannerObject, Partition, Pt, Underlay } from './types'
+import type { Dimension, Floor, LayerVis, PlannerDoc, PlannerObject, Partition, Pt, Underlay } from './types'
 import { DEFAULT_LAYERS, DEFAULT_GRID_STEP, ENG_COLORS, MAX_FLOORS, emptyFloor, uid } from './types'
 
 /** Старая палитра инженерии (до цветового разделения по слоям) — при загрузке заменяется на цвет слоя */
@@ -105,14 +105,6 @@ function underlayOf(v: unknown): Underlay | null {
   }
 }
 
-function cameraOf(v: unknown): CameraMark | null {
-  if (!isObj(v)) return null
-  const x = num(v.x)
-  const y = num(v.y)
-  if (x === null || y === null) return null
-  return { x, y, angle: num(v.angle) ?? 0 }
-}
-
 function floorOf(v: unknown, idx: number): Floor {
   const f = emptyFloor(str(isObj(v) ? v.name : null) ?? `Этаж ${idx + 1}`)
   if (!isObj(v)) return f
@@ -126,7 +118,6 @@ function floorOf(v: unknown, idx: number): Floor {
   f.objects = (Array.isArray(v.objects) ? v.objects : []).map(objOf).filter((o): o is PlannerObject => o !== null)
   f.dimensions = (Array.isArray(v.dimensions) ? v.dimensions : []).map(dimensionOf).filter((d): d is Dimension => d !== null)
   f.underlay = underlayOf(v.underlay)
-  f.camera = cameraOf(v.camera)
   return f
 }
 

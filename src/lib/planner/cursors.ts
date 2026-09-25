@@ -64,13 +64,6 @@ export const CURSOR_RULER =
 export const CURSOR_DIM =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'><path d='M18 8l4 4-4 4'/><path d='M6 8l-4 4 4 4'/><path d='M2 12h20'/></g><g fill='none' stroke='" + INK + "' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M18 8l4 4-4 4'/><path d='M6 8l-4 4 4 4'/><path d='M2 12h20'/></g><circle cx='12' cy='12' r='2' fill='" + ORANGE + "' stroke='white' stroke-width='1.4'/></svg>\") 12 12, crosshair"
 
-/** Камера — перекрестье с оранжевым объективом; точка съёмки 3D-снимка */
-export const CURSOR_CAMERA =
-  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'>" +
-  CROSSHAIR_HALO +
-  CROSSHAIR_INK +
-  "<circle cx='12' cy='12' r='4.2' fill='white' stroke='" + INK + "' stroke-width='1.4'/><circle cx='12' cy='12' r='2.2' fill='" + ORANGE + "'/></svg>\") 12 12, crosshair"
-
 /** Поворот — круговая стрелка (над ручкой поворота) */
 export const CURSOR_ROTATE =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'/><path d='M21 3v5h-5'/></g><g fill='none' stroke='" + INK + "' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'/><path d='M21 3v5h-5'/></g></svg>\") 12 12, grab"
