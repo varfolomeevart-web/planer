@@ -905,6 +905,15 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
     return sum / fp.length
   }
 
+  /**
+   * Плоские напольные части (ковры, тёплый пол): рисуются ДО всех стоящих
+   * предметов при любом азимуте — иначе при повороте ковёр «наезжает» на
+   * кровать/диван, чей след частично лежит на нём (сортировка по средней
+   * глубине переворачивает порядок таких пар).
+   */
+  const isFlatPart = (part: Part) => part.z0 < 0.5 && part.z1 <= 8
+  const flatItems: BoxItem[] = []
+
   /** тень приподнятого предмета на поверхности опоры (контакт + мягкий хвост) */
   const drawStackShadow = (b: { o: PlannerObject; parts: Part[] }, ev: number) => {
     const fp = objectCorners(b.o)
@@ -948,13 +957,17 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
     for (const part of b.parts) {
       const d = Math.max(planDepth(part.fp), floorD)
       objMax = Math.max(objMax, d)
-      items.push({ depth: d, draw: () => drawPart(part) })
+      const bucket = isFlatPart(part) ? flatItems : items
+      bucket.push({ depth: d, draw: () => drawPart(part) })
     }
     if (info && b.parts.length > 0) {
       items.push({ depth: floorD - 0.005, draw: () => drawStackShadow(b, info.z) })
     }
     if (b.parts.length > 0) finalMax.set(b.o, objMax)
   }
+  // ковры и прочие плоские части — сразу после теней, до стоящих предметов
+  flatItems.sort((b1, b2) => b1.depth - b2.depth)
+  for (const it of flatItems) it.draw()
   items.sort((b1, b2) => b1.depth - b2.depth)
   for (const it of items) it.draw()
 
@@ -1086,16 +1099,6 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
     }
     ctx.globalAlpha = 1
   }
-
-  for (const b of built) {
-    for (const part of b.parts) {
-      let sum = 0
-      for (const p of part.fp) sum += p.x * sinA + p.y * cosA
-      items.push({ depth: sum / part.fp.length, draw: () => drawPart(part) })
-    }
-  }
-  items.sort((b1, b2) => b1.depth - b2.depth)
-  for (const it of items) it.draw()
 
   // ---------- ближние стены и перегородки ----------
   if (st.walls !== 'hide' && nearFaces.length) {
