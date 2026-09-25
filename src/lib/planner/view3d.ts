@@ -497,6 +497,115 @@ export function objectParts(o: PlannerObject): Part[] {
   return parts
 }
 
+// ---------- предметы друг на друге ----------
+
+/** Площадь полигона (формула шнурков) */
+export function polyArea(pts: Pt[]): number {
+  let s = 0
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    s += a.x * b.y - b.x * a.y
+  }
+  return Math.abs(s) / 2
+}
+
+function ensureCCW(pts: Pt[]): Pt[] {
+  let s = 0
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    s += a.x * b.y - b.x * a.y
+  }
+  return s < 0 ? pts.slice().reverse() : pts.slice()
+}
+
+/** Пересечение выпуклых полигонов (Сазерленд–Ходжман), полигоны в CCW */
+function clipConvex(subject: Pt[], clip: Pt[]): Pt[] {
+  let out = subject
+  for (let i = 0; i < clip.length; i++) {
+    const a = clip[i]
+    const b = clip[(i + 1) % clip.length]
+    const ex = b.x - a.x
+    const ey = b.y - a.y
+    const input = out
+    out = []
+    for (let j = 0; j < input.length; j++) {
+      const p = input[j]
+      const q = input[(j + 1) % input.length]
+      const dp = ex * (p.y - a.y) - ey * (p.x - a.x)
+      const dq = ex * (q.y - a.y) - ey * (q.x - a.x)
+      if (dp >= 0) out.push(p)
+      if ((dp >= 0) !== (dq >= 0)) {
+        const t = dp / (dp - dq)
+        out.push({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t })
+      }
+    }
+    if (out.length < 3) return []
+  }
+  return out
+}
+
+/** Минимальная высота предмета, чтобы служить опорой или стоять на опоре, см */
+const STACK_MIN_H = 12
+/** Какая доля следа «наездника» должна лежать на опоре */
+const STACK_COVER = 0.6
+
+/**
+ * Постановка предметов друг на друга: если след меньшего предмета лежит на
+ * следе большего (а сам предмет по высоте помещается на опору), он поднимается
+ * на её верх. Цепочки работают (коробка на тумбе на полу). Подвесные объекты
+ * (люстры, вытяжки), «плоские» (ковры) и инженерия не участвуют.
+ * Мутирует z0/z1 частей; возвращает подъём и опору для каждого предмета.
+ */
+function applyStacking(built: { o: PlannerObject; parts: Part[] }[]): Map<PlannerObject, { z: number; sup: PlannerObject }> {
+  const res = new Map<PlannerObject, { z: number; sup: PlannerObject }>()
+  const furn = built.filter(
+    (b) => (b.o.layer ?? 'furniture') === 'furniture' && (PRESET_ZOFF[b.o.presetId] ?? 0) === 0,
+  )
+  const fps = new Map<PlannerObject, Pt[]>()
+  const areas = new Map<PlannerObject, number>()
+  const tops = new Map<PlannerObject, number>()
+  for (const b of furn) {
+    const fp = ensureCCW(objectCorners(b.o))
+    fps.set(b.o, fp)
+    areas.set(b.o, polyArea(fp))
+    let top = 0
+    for (const p of b.parts) top = Math.max(top, p.z1)
+    tops.set(b.o, top)
+  }
+  // от больших к меньшим: к моменту обработки «наездника» его опоры уже подняты
+  const order = furn.slice().sort((b1, b2) => (areas.get(b2.o) ?? 0) - (areas.get(b1.o) ?? 0))
+  for (const b of order) {
+    const aA = areas.get(b.o) ?? 0
+    if ((tops.get(b.o) ?? 0) < STACK_MIN_H) continue // плоские (ковёр) остаются на полу
+    let best = 0
+    let sup: PlannerObject | null = null
+    for (const s of order) {
+      if (s === b) continue
+      const aS = areas.get(s.o) ?? 0
+      if (aA >= aS * 0.92) continue // «наездник» заметно меньше опоры
+      const topS = (tops.get(s.o) ?? 0) + (res.get(s.o)?.z ?? 0)
+      if (topS < STACK_MIN_H) continue
+      if ((tops.get(b.o) ?? 0) > topS + 1) continue // не помещается по высоте (стул под столом)
+      const inter = polyArea(clipConvex(fps.get(b.o)!, fps.get(s.o)!))
+      if (inter < STACK_COVER * aA) continue
+      if (topS > best) {
+        best = topS
+        sup = s.o
+      }
+    }
+    if (sup && best > 0) {
+      res.set(b.o, { z: best, sup })
+      for (const p of b.parts) {
+        p.z0 += best
+        p.z1 += best
+      }
+    }
+  }
+  return res
+}
+
 // ---------- рендер сцены ----------
 
 /**
@@ -515,6 +624,8 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
   const objects = floor.objects.filter((o) => !isDoorWindowPreset(o.presetId))
   const built: { o: PlannerObject; parts: Part[] }[] = []
   for (const o of objects) built.push({ o, parts: objectParts(o) })
+  // предметы, лежащие на других предметах, поднимаются на их верх
+  const stackInfo = applyStacking(built)
   if (!hasRoom && built.length === 0) return
 
   const az = (st.azimuth * Math.PI) / 180
@@ -752,6 +863,8 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
   polyPath(ctx, floorPoly, s, ox, oy)
   ctx.clip()
   for (const b of built) {
+    // у приподнятых предметов тень рисуется на поверхности опоры, при самом предмете
+    if (stackInfo.has(b.o)) continue
     let zmax = 0
     for (const part of b.parts) zmax = Math.max(zmax, part.z1)
     const fp = objectCorners(b.o)
@@ -784,6 +897,66 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
     draw: () => void
   }
   const items: BoxItem[] = []
+
+  /** глубина следа части вдоль оси взгляда */
+  const planDepth = (fp: Pt[]) => {
+    let sum = 0
+    for (const p of fp) sum += p.x * sinA + p.y * cosA
+    return sum / fp.length
+  }
+
+  /** тень приподнятого предмета на поверхности опоры (контакт + мягкий хвост) */
+  const drawStackShadow = (b: { o: PlannerObject; parts: Part[] }, ev: number) => {
+    const fp = objectCorners(b.o)
+    let ccx = 0
+    let ccy = 0
+    for (const p of fp) {
+      ccx += p.x
+      ccy += p.y
+    }
+    ccx /= fp.length
+    ccy /= fp.length
+    const z = ev + 0.3
+    // контактное затемнение — след, расширенный наружу на ~2.5 см
+    const pad = fp.map((p) => {
+      const dx = p.x - ccx
+      const dy = p.y - ccy
+      const l = Math.hypot(dx, dy) || 1
+      return { x: ccx + (dx / l) * (l + 2.5), y: ccy + (dy / l) * (l + 2.5) }
+    })
+    fillPoly(ctx, pad.map((p) => proj(p.x, p.y, z)), s, ox, oy, 'rgba(40,34,28,0.10)')
+    // мягкая падающая тень по направлению света (в пределах высоты предмета)
+    let own = 0
+    for (const part of b.parts) own = Math.max(own, part.z1 - ev)
+    const off = Math.min(own * 0.28, 14)
+    if (off > 2) {
+      const hull = convexHull([...fp, ...fp.map((p) => ({ x: p.x + shadowDir.x * off, y: p.y + shadowDir.y * off }))])
+      fillPoly(ctx, hull.map((p) => proj(p.x, p.y, z)), s, ox, oy, 'rgba(40,34,28,0.12)')
+    }
+  }
+
+  // опора рисуется раньше «наездника»: части приподнятого предмета получают
+  // глубину не меньше максимальной глубины частей его опоры
+  const finalMax = new Map<PlannerObject, number>()
+  const procOrder = built
+    .slice()
+    .sort((b1, b2) => polyArea(objectCorners(b2.o)) - polyArea(objectCorners(b1.o)))
+  for (const b of procOrder) {
+    const info = stackInfo.get(b.o)
+    const floorD = info ? (finalMax.get(info.sup) ?? 0) + 0.01 : 0
+    let objMax = -Infinity
+    for (const part of b.parts) {
+      const d = Math.max(planDepth(part.fp), floorD)
+      objMax = Math.max(objMax, d)
+      items.push({ depth: d, draw: () => drawPart(part) })
+    }
+    if (info && b.parts.length > 0) {
+      items.push({ depth: floorD - 0.005, draw: () => drawStackShadow(b, info.z) })
+    }
+    if (b.parts.length > 0) finalMax.set(b.o, objMax)
+  }
+  items.sort((b1, b2) => b1.depth - b2.depth)
+  for (const it of items) it.draw()
 
   function drawPart(part: Part) {
     const P = part.fp.map((p) => ({ a: proj(p.x, p.y, part.z0), b: proj(p.x, p.y, part.z1) }))
@@ -976,6 +1149,8 @@ export function buildScene(floor: Floor, layers?: LayerVis): Scene3d {
     (o) => !isDoorWindowPreset(o.presetId) && (!layers || layers[o.layer ?? 'furniture']),
   )
   const objectsParts = objects.map((o) => ({ o, parts: objectParts(o) }))
+  // предметы, лежащие на других предметах, поднимаются на их верх
+  applyStacking(objectsParts)
   const walls: WallSeg[] = []
 
   if (hasRoom && floor.room) {
