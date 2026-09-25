@@ -955,7 +955,15 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
     const floorD = info ? (finalMax.get(info.sup) ?? 0) + 0.01 : 0
     let objMax = -Infinity
     for (const part of b.parts) {
-      const d = Math.max(planDepth(part.fp), floorD)
+      // Глубина вдоль луча взгляда: план-составляющая относительна (может быть
+      // отрицательной — клампить её против нуля нельзя: иначе все предметы «за
+      // нулевой линией» получают одну глубину и задний план наезжает на
+      // передний). Z-составляющая обеспечивает правильное перекрытие частей на
+      // разной высоте (седушка стула под столешницей, верх высокого шкафа).
+      // Ограничение снизу допустимо только для «наездника» — относительно
+      // глубины его опоры.
+      const pd = planDepth(part.fp) * sinE + ((part.z0 + part.z1) / 2) * cosE
+      const d = info ? Math.max(pd, floorD) : pd
       objMax = Math.max(objMax, d)
       const bucket = isFlatPart(part) ? flatItems : items
       bucket.push({ depth: d, draw: () => drawPart(part) })

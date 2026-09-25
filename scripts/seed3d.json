@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "doc": {
+    "floors": [
+      {
+        "id": "f1",
+        "name": "Тест 3D",
+        "room": [{ "x": 0, "y": 0 }, { "x": 520, "y": 0 }, { "x": 520, "y": 420 }, { "x": 0, "y": 420 }],
+        "partitions": [],
+        "objects": [
+          { "id": "o1", "presetId": "dining_table", "name": "Стол", "x": 330, "y": 180, "w": 160, "h": 90, "angle": 0, "color": "#8F7247", "layer": "furniture" },
+          { "id": "o2", "presetId": "chair", "name": "Стул", "x": 353, "y": 147, "w": 45, "h": 50, "angle": 0, "color": "#C8843C", "layer": "furniture" },
+          { "id": "o3", "presetId": "sofa", "name": "Диван", "x": 130, "y": 345, "w": 200, "h": 90, "angle": 0, "color": "#6E7F8C", "layer": "furniture" },
+          { "id": "o4", "presetId": "plant", "name": "Растение", "x": 200, "y": 250, "w": 40, "h": 40, "angle": 0, "color": "#5E8C5A", "layer": "furniture" },
+          { "id": "o5", "presetId": "dresser", "name": "Комод", "x": 85, "y": 172, "w": 60, "h": 50, "angle": 0, "color": "#9C6B4E", "layer": "furniture" },
+          { "id": "o6", "presetId": "coffee_machine", "name": "Кофемашина", "x": 85, "y": 172, "w": 36, "h": 36, "angle": 0, "color": "#3B3733", "layer": "furniture" },
+          { "id": "o7", "presetId": "rug", "name": "Ковёр", "x": 300, "y": 300, "w": 180, "h": 120, "angle": 0, "color": "#B5654D", "layer": "furniture" },
+          { "id": "o8", "presetId": "armchair", "name": "Кресло", "x": 300, "y": 300, "w": 95, "h": 85, "angle": 0, "color": "#7A6A8C", "layer": "furniture" },
+          { "id": "o9", "presetId": "wardrobe", "name": "Шкаф", "x": 470, "y": 120, "w": 90, "h": 60, "angle": 0, "color": "#7D8B6E", "layer": "furniture" },
+          { "id": "o10", "presetId": "bookshelf", "name": "Стеллаж", "x": 60, "y": 55, "w": 90, "h": 30, "angle": 0, "color": "#A3785A", "layer": "furniture" },
+          { "id": "o11", "presetId": "fridge", "name": "Холодильник", "x": 480, "y": 330, "w": 65, "h": 60, "angle": 0, "color": "#C9C9C9", "layer": "furniture" }
+        ],
+        "dimensions": [],
+        "underlay": null
+      }
+    ],
+    "currentFloorId": "f1",
+    "gridStep": 25,
+    "layers": { "furniture": true, "vent": true, "water": true, "electric": true }
+  },
+  "showGrid": true
+}
