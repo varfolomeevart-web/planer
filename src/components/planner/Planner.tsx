@@ -726,6 +726,15 @@ export function Planner() {
     [applyDoc],
   )
 
+  // ---------- камера ----------
+  const handleDeleteCamera = useCallback(() => {
+    const fl = currentFloor(docRef.current)
+    if (!fl.camera) return
+    pushHistory()
+    withFloors((f) => ({ ...f, camera: null }))
+    toast('Камера удалена', { icon: '🗑️' })
+  }, [pushHistory, withFloors])
+
   // ---------- подложка ----------
   const handleUnderlayFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1664,6 +1673,8 @@ export function Planner() {
           }
           setSnapOpen(true)
         }}
+        hasCamera={!!fl.camera}
+        onDeleteCamera={handleDeleteCamera}
         floors={doc.floors}
         currentFloorId={doc.currentFloorId}
         onSwitchFloor={switchFloorTo}
