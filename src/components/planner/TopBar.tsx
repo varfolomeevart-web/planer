@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
+  Box,
   BrickWall,
   CopyPlus,
   Eraser,
@@ -71,6 +72,7 @@ interface Props {
   onExportPNG: () => void
   onExportPDF: () => void
   onExportJSON: () => void
+  onOpen3d: () => void
   floors: Floor[]
   currentFloorId: string
   onSwitchFloor: (id: string) => void
@@ -109,6 +111,7 @@ export function TopBar({
   onExportPNG,
   onExportPDF,
   onExportJSON,
+  onOpen3d,
   floors,
   currentFloorId,
   onSwitchFloor,
@@ -304,6 +307,12 @@ export function TopBar({
           <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportPDF}>
             <FileText className="mr-1 h-3.5 w-3.5" />
             <span className="hidden md:inline">PDF</span>
+          </Button>
+        </Tip>
+        <Tip label="3D-визуализация" hint="объёмный вид этажа · тяните мышью, колесо — масштаб">
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onOpen3d}>
+            <Box className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">3D</span>
           </Button>
         </Tip>
         <Tip label="PNG" hint="скачать план картинкой">

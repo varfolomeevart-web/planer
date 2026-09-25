@@ -26,6 +26,7 @@ import { exportJSON, exportPNG, exportPDF, makeSaveFile, validateSaveFile } from
 import { Catalog } from './Catalog'
 import { PropertiesPanel } from './PropertiesPanel'
 import { TopBar } from './TopBar'
+import { View3dModal } from './View3dModal'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { PencilLine, Ruler } from 'lucide-react'
@@ -70,6 +71,7 @@ export function Planner() {
   const [underlaySelected, setUnderlaySelected] = useState(false)
   const [selectedPartitionId, setSelectedPartitionId] = useState<string | null>(null)
   const [selectedDimensionId, setSelectedDimensionId] = useState<string | null>(null)
+  const [view3dOpen, setView3dOpen] = useState(false)
 
   // ---------- refs ----------
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1553,6 +1555,13 @@ export function Planner() {
           exportJSON(docRef.current, showGridRef.current)
           toast.success('JSON-файл скачивается…')
         }}
+        onOpen3d={() => {
+          if (!fl.room && fl.objects.length === 0) {
+            toast.warning('Нарисуйте комнату или добавьте объекты — в 3D пока нечего показывать')
+            return
+          }
+          setView3dOpen(true)
+        }}
         floors={doc.floors}
         currentFloorId={doc.currentFloorId}
         onSwitchFloor={switchFloorTo}
@@ -1679,6 +1688,8 @@ export function Planner() {
         className="hidden"
         onChange={handleUnderlayFile}
       />
+
+      {view3dOpen && <View3dModal doc={doc} onClose={() => setView3dOpen(false)} />}
     </div>
   )
 }

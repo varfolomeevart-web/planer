@@ -22,7 +22,7 @@ export function validateSaveFile(data: unknown): PlannerDoc | null {
   return normalizeDoc(data)
 }
 
-function download(blob: Blob, filename: string) {
+export function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
