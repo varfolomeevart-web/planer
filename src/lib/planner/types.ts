@@ -171,6 +171,16 @@ export interface Partition {
   id: string
   /** точки полилинии, см (минимум 2) */
   pts: Pt[]
+  /** толщина стены, см (для 3D-рендера; undefined — не указана) */
+  thicknessCm?: number
+}
+
+/** Толщина перегородки по умолчанию, см (типовая ГКЛ/пазогребневая) */
+export const DEFAULT_PARTITION_THICKNESS = 10
+
+/** Эффективная толщина перегородки */
+export function partitionThickness(p: Partition): number {
+  return p.thicknessCm ?? DEFAULT_PARTITION_THICKNESS
 }
 
 /** Выноска-размер: отрезок с подписью длины */

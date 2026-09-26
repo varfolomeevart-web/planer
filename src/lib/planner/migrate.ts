@@ -138,7 +138,11 @@ function partitionOf(v: unknown): Partition | null {
   if (!isObj(v)) return null
   const pts = ptsOf(v.pts)
   if (!pts || pts.length < 2) return null
-  return { id: str(v.id) ?? uid(), pts }
+  const out: Partition = { id: str(v.id) ?? uid(), pts }
+  // толщина стены (v1.6): 2–100 см
+  const th = num(v.thicknessCm)
+  if (th !== null) out.thicknessCm = Math.max(2, Math.min(Math.round(th), 100))
+  return out
 }
 
 function dimensionOf(v: unknown): Dimension | null {

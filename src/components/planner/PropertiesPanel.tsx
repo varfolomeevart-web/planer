@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { CameraView, Dimension, Floor, MaterialKind, MaterialSpec, OpeningSpec, Partition, PlannerDoc, PlannerObject, StairsSpec, Underlay } from '@/lib/planner/types'
-import { DEFAULT_CEILING_H, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, LIGHT_PRESETS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS, VIEW_PRESETS, uid } from '@/lib/planner/types'
+import { DEFAULT_CEILING_H, DEFAULT_PARTITION_THICKNESS, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, LIGHT_PRESETS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS, VIEW_PRESETS, uid } from '@/lib/planner/types'
 import { ENG_GROUPS, getPreset } from '@/lib/planner/presets'
 import { isStairs } from '@/lib/planner/floors'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
@@ -34,6 +34,7 @@ interface Props {
   onDeleteObject: (id: string) => void
   onDuplicateObject: (id: string) => void
   onDeletePartition: (id: string) => void
+  onUpdatePartition: (id: string, patch: Partial<Partition>) => void
   onDeleteDimension: (id: string) => void
   onClearRoom: () => void
   onSelectUnderlay: () => void
@@ -191,6 +192,7 @@ export function PropertiesPanel({
   onDeleteObject,
   onDuplicateObject,
   onDeletePartition,
+  onUpdatePartition,
   onDeleteDimension,
   onClearRoom,
   onSelectUnderlay,
@@ -717,6 +719,21 @@ export function PropertiesPanel({
                 <div className="text-[10px] font-semibold tracking-wide text-[#8B7D6B] uppercase">Узлов</div>
                 <div className="text-lg font-bold text-[#3D3428] tabular-nums">{selectedPartition.pts.length}</div>
               </div>
+            </div>
+            <div>
+              <Label htmlFor="part-thickness" className="text-[11px] text-[#8B7D6B]">
+                Толщина стены
+              </Label>
+              <NumberField
+                id="part-thickness"
+                value={selectedPartition.thicknessCm ?? DEFAULT_PARTITION_THICKNESS}
+                min={2}
+                max={100}
+                suffix="см"
+                onCommit={onCommit}
+                onChange={(v) => onUpdatePartition(selectedPartition.id, { thicknessCm: Math.round(v) })}
+              />
+              <p className="mt-1 text-[10px] text-[#8B7D6B]">Попадает в ТЗ для 3D-визуализатора.</p>
             </div>
             <p className="text-xs leading-relaxed text-[#8B7D6B]">
               Перетащите белые узлы на плане, чтобы изменить форму. <b>Del</b> — удалить перегородку.

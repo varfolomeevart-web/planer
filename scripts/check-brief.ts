@@ -5,6 +5,7 @@
  */
 import { buildRenderBrief } from '../src/lib/planner/brief'
 import type { Floor, PlannerDoc } from '../src/lib/planner/types'
+import { makeSaveFile, validateSaveFile } from '../src/lib/planner/export'
 
 const floor: Floor = {
   id: 'f1',
@@ -15,7 +16,10 @@ const floor: Floor = {
     { x: 620, y: 540 },
     { x: 0, y: 540 },
   ],
-  partitions: [],
+  partitions: [
+    { id: 'p1', pts: [{ x: 620, y: 240 }, { x: 320, y: 240 }], thicknessCm: 12 },
+    { id: 'p2', pts: [{ x: 320, y: 240 }, { x: 320, y: 540 }, { x: 100, y: 540 }], thicknessCm: 12 },
+  ],
   dimensions: [],
   underlay: null,
   ceilingHeightCm: 270,
@@ -94,6 +98,12 @@ const checks: [string, boolean][] = [
   ['освещение по зонам (2 строки)', brief.includes('LED-панели') && brief.includes('лофт')],
   ['ракурсы пронумерованы', brief.includes('1. Изометрия сверху') && brief.includes('3. Вид из кухни на лестницу')],
   ['оборудование сгруппировано по материалу', brief.includes('Оборудование/мебель — Металл, нержавеющая сталь матовая (')],
+  ['контур стен: вершины перечислены', brief.includes('Стены помещения: замкнутый контур') && brief.includes('Вершины контура')],
+  ['габарит и площадь помещения', brief.includes('620×540') && brief.includes('33,5 м²')],
+  ['перегородки: количество и толщина', brief.includes('Перегородки (внутренние стены): 2 шт., толщина 12 см')],
+  ['перегородка 1: отрезок + координаты + длина', brief.includes('Перегородка 1: отрезок от (620; 240) до (320; 240) см, длина 300 см, толщина 12 см')],
+  ['перегородка 2: 3 узла', brief.includes('Перегородка 2: 3 узла') && brief.includes('толщина 12 см')],
+  ['легенда системы координат', brief.includes('Система координат: сантиметры')],
 ]
 let ok = true
 for (const [name, passed] of checks) {
@@ -102,3 +112,56 @@ for (const [name, passed] of checks) {
 }
 if (!ok) process.exit(1)
 console.log('\nВсе проверки брифа пройдены.')
+
+// ---------- round-trip: экспорт → импорт сохраняет перегородки с толщиной ----------
+const saved = makeSaveFile(doc, true)
+const json = JSON.parse(JSON.stringify(saved)) // имитация передачи файла
+const restored = validateSaveFile(json)
+if (!restored) {
+  console.error('FAIL  round-trip: документ не восстановлен')
+  process.exit(1)
+}
+const rp = restored.floors[0].partitions
+const rtChecks: [string, boolean][] = [
+  ['round-trip: перегородок 2', rp.length === 2],
+  ['round-trip: толщина 12 сохранена', rp[0]?.thicknessCm === 12 && rp[1]?.thicknessCm === 12],
+  ['round-trip: точки перегородки совпадают', rp[0]?.pts[0].x === 620 && rp[1]?.pts.length === 3],
+  ['round-trip: бриф в файле содержит перегородки', (json.brief as string).includes('Перегородки (внутренние стены)')],
+]
+let ok2 = true
+for (const [name, passed] of rtChecks) {
+  console.log(`${passed ? 'PASS' : 'FAIL'}  ${name}`)
+  if (!passed) ok2 = false
+}
+if (!ok2) process.exit(1)
+console.log('\nRound-trip экспорт/импорт перегородок пройден.')
+
+// ---------- разные толщины у перегородок ----------
+const doc2: PlannerDoc = {
+  ...doc,
+  floors: [
+    {
+      ...floor,
+      partitions: [
+        { id: 'q1', pts: [{ x: 0, y: 100 }, { x: 200, y: 100 }], thicknessCm: 8 },
+        { id: 'q2', pts: [{ x: 0, y: 300 }, { x: 200, y: 300 }] }, // без толщины → дефолт 10
+      ],
+    },
+  ],
+}
+const brief2 = buildRenderBrief(doc2)
+const c1 = brief2.includes('Перегородки (внутренние стены): 2 шт. (толщина у каждой своя — см. ниже).')
+const c2 = brief2.includes('толщина 8 см')
+const c3 = brief2.includes('толщина 10 см')
+const checks3: [string, boolean][] = [
+  ['разные толщины: заголовок без двойной точки', c1],
+  ['разные толщины: 8 см упомянута', c2],
+  ['разные толщины: дефолт 10 см подставлен', c3],
+]
+let ok3 = true
+for (const [name, passed] of checks3) {
+  console.log(`${passed ? 'PASS' : 'FAIL'}  ${name}`)
+  if (!passed) ok3 = false
+}
+if (!ok3) process.exit(1)
+console.log('\nВсе проверки пройдены.')

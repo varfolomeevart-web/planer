@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Dimension, Floor, ObjLayer, PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
-import { MAX_FLOORS, currentFloor, emptyFloor, makeDoc, uid } from '@/lib/planner/types'
+import type { Dimension, Floor, ObjLayer, Partition, PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
+import { DEFAULT_PARTITION_THICKNESS, MAX_FLOORS, currentFloor, emptyFloor, makeDoc, uid } from '@/lib/planner/types'
 import type { Preset } from '@/lib/planner/presets'
 import { defaultMaterialFor, isDoorWindowPreset } from '@/lib/planner/presets'
 import type { Tool } from '@/lib/planner/tools'
@@ -420,7 +420,7 @@ export function Planner() {
     }
     if (cleaned.length >= 2) {
       pushHistory()
-      const part = { id: uid(), pts: cleaned }
+      const part = { id: uid(), pts: cleaned, thicknessCm: DEFAULT_PARTITION_THICKNESS }
       withFloors((f) => ({ ...f, partitions: [...f.partitions, part] }))
       toast.success('Перегородка добавлена — можно рисовать следующую, Esc — выйти из режима')
     }
@@ -434,6 +434,14 @@ export function Planner() {
       toast('Перегородка удалена', { icon: '🗑️' })
     },
     [withFloors, pushHistory],
+  )
+
+  /** Обновить перегородку (толщина стены и т.п.) */
+  const updatePartition = useCallback(
+    (id: string, patch: Partial<Partition>) => {
+      withFloors((f) => ({ ...f, partitions: f.partitions.map((p) => (p.id === id ? { ...p, ...patch } : p)) }))
+    },
+    [withFloors],
   )
 
   /** Привязка двери/окна к ближайшей стене */
@@ -687,7 +695,7 @@ export function Planner() {
       id: uid(),
       name: `${src.name} — копия`,
       room: src.room ? src.room.map((p) => ({ ...p })) : null,
-      partitions: src.partitions.map((p) => ({ id: uid(), pts: p.pts.map((q) => ({ ...q })) })),
+      partitions: src.partitions.map((p) => ({ id: uid(), pts: p.pts.map((q) => ({ ...q })), ...(p.thicknessCm !== undefined ? { thicknessCm: p.thicknessCm } : {}) })),
       objects: src.objects.map((o) => ({
         ...o,
         id: uid(),
@@ -1674,6 +1682,7 @@ export function Planner() {
             onDeleteObject={deleteObject}
             onDuplicateObject={duplicateObject}
             onDeletePartition={deletePartition}
+            onUpdatePartition={updatePartition}
             onDeleteDimension={deleteDimension}
             onClearRoom={clearRoom}
             onSelectUnderlay={selectUnderlay}

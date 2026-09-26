@@ -1,12 +1,12 @@
-import type { Floor, MaterialSpec, PlannerDoc, PlannerObject } from './types'
-import { DOOR_OPEN_TYPES, MATERIAL_KINDS, STAIRS_KINDS, ascentWorldName, ceilingH } from './types'
+import type { Floor, MaterialSpec, PlannerDoc, PlannerObject, Pt } from './types'
+import { DOOR_OPEN_TYPES, MATERIAL_KINDS, STAIRS_KINDS, ascentWorldName, ceilingH, partitionThickness } from './types'
 import { isDoorWindowPreset } from './presets'
 import { objectHeightCm } from './view3d'
 
 /**
  * Автотекстовый бриф для 3D-визуализатора: генерируется из структурированных
  * данных проекта при экспорте JSON (поле brief в SaveFile) и кнопкой «ТЗ».
- * Разделы: геометрия этажа (потолки/проёмы/перепады уровней),
+ * Разделы: геометрия этажа (контур стен/перегородки/потолки/проёмы/перепады уровней),
  * мебель с размерами и высотами, МАТЕРИАЛЫ И ТЕКСТУРЫ, ОСВЕЩЕНИЕ, РАКУРСЫ.
  */
 
@@ -48,7 +48,70 @@ function objLine(o: PlannerObject): string {
   return `    — ${parts.join(', ')}`
 }
 
-/* ---------- Раздел «МАТЕРИАЛЫ И ТЕКСТУРЫ» ---------- */
+/* ---------- Раздел «ГЕОМЕТРИЯ»: контур стен и перегородки ---------- */
+
+const fmtPt = (p: Pt): string => `(${Math.round(p.x)}; ${Math.round(p.y)})`
+
+/** «2 вершины», «5 вершин» и т.п. — русские формы множественного числа */
+function plural(n: number, forms: [string, string, string]): string {
+  const a = Math.abs(n) % 100
+  const b = a % 10
+  if (a > 10 && a < 20) return `${n} ${forms[2]}`
+  if (b > 1 && b < 5) return `${n} ${forms[1]}`
+  if (b === 1) return `${n} ${forms[0]}`
+  return `${n} ${forms[2]}`
+}
+
+function polyLenCm(pts: Pt[]): number {
+  let s = 0
+  for (let i = 0; i < pts.length - 1; i++) s += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y)
+  return s
+}
+
+/** Контур наружных стен комнаты (замкнутый многоугольник) */
+function roomBrief(f: Floor): string[] {
+  const room = f.room
+  if (!room || room.length < 3) {
+    return ['    — Контур помещения не нарисован на плане (задайте его текстом).']
+  }
+  const lines: string[] = []
+  const xs = room.map((p) => p.x)
+  const ys = room.map((p) => p.y)
+  const w = Math.max(...xs) - Math.min(...xs)
+  const d = Math.max(...ys) - Math.min(...ys)
+  let area = 0
+  for (let i = 0; i < room.length; i++) {
+    const a = room[i]
+    const b = room[(i + 1) % room.length]
+    area += a.x * b.y - b.x * a.y
+  }
+  area = Math.abs(area) / 2
+  lines.push(`  Стены помещения: замкнутый контур (наружные стены), ${plural(room.length, ['вершина', 'вершины', 'вершин'])}, габарит ${Math.round(w)}×${Math.round(d)} см, площадь ${(area / 10000).toFixed(1).replace('.', ',')} м².`)
+  lines.push(`    Вершины контура (x; y), см, по порядку: ${room.map(fmtPt).join(' → ')}.`)
+  return lines
+}
+
+/** Внутренние стены-перегородки */
+function partitionsBrief(f: Floor): string[] {
+  const parts = f.partitions.filter((p) => p.pts.length >= 2)
+  if (parts.length === 0) return []
+  const lines: string[] = []
+  const thicks = parts.map(partitionThickness)
+  const uniform = thicks.every((t) => t === thicks[0])
+  lines.push(
+    uniform
+      ? `  Перегородки (внутренние стены): ${parts.length} шт., толщина ${thicks[0]} см.`
+      : `  Перегородки (внутренние стены): ${parts.length} шт. (толщина у каждой своя — см. ниже).`,
+  )
+  parts.forEach((p, i) => {
+    const len = Math.round(polyLenCm(p.pts))
+    const th = partitionThickness(p)
+    const shape = p.pts.length === 2 ? `отрезок от ${fmtPt(p.pts[0])} до ${fmtPt(p.pts[1])}` : `${plural(p.pts.length, ['узел', 'узла', 'узлов'])}: ${p.pts.map(fmtPt).join(' → ')}`
+    lines.push(`    — Перегородка ${i + 1}: ${shape} см, длина ${len} см, толщина ${th} см.`)
+  })
+  return lines
+}
+
 
 function materialsBrief(f: Floor): string[] {
   const lines: string[] = []
@@ -120,6 +183,11 @@ function floorBrief(f: Floor, idx: number): string {
   const lines: string[] = []
   const ceil = ceilingH(f)
   lines.push(`ЭТАЖ ${idx + 1} — «${f.name}»`)
+
+  // Геометрия: контур наружных стен
+  lines.push(...roomBrief(f))
+  // Перегородки
+  lines.push(...partitionsBrief(f))
 
   // Потолок и перепады уровней
   lines.push(`  Высота потолка: ${ceil} см (${(ceil / 100).toFixed(2).replace('.', ',')} м).`)
@@ -198,6 +266,7 @@ export function buildRenderBrief(doc: PlannerDoc): string {
   const head = [
     'ТЕХНИЧЕСКОЕ ЗАДАНИЕ ДЛЯ 3D-ВИЗУАЛИЗАЦИИ (автогенерация из планировщика)',
     `Дата: ${new Date().toLocaleDateString('ru-RU')}`,
+    'Система координат: сантиметры, начало (0; 0) — левый верхний угол плана, ось X вправо, ось Y вниз (в 3D ось Y плана соответствует глубине).',
     '',
   ]
   const floors = doc.floors.map((f, i) => floorBrief(f, i))
