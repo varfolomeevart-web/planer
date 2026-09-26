@@ -6,9 +6,10 @@ import { currentFloor } from '@/lib/planner/types'
 import { polygonArea } from '@/lib/planner/geometry'
 import { download } from '@/lib/planner/export'
 import { preload3dImages, render3d, VIEW3D_DEFAULT, type View3dState } from '@/lib/planner/view3d'
+import { exportGltfModel } from '@/lib/planner/gltf'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { Box, ImageDown, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Box, Download, ImageDown, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 interface Props {
   doc: PlannerDoc
@@ -127,12 +128,27 @@ export function View3dModal({ doc, onClose }: Props) {
   const exportPng = () => {
     const c = canvasRef.current
     if (!c) return
-    c.toBlob((blob) => {
+    // рендер из координатной модели в повышенном разрешении: ×2 к текущему кадру
+    const k = 2
+    const off = document.createElement('canvas')
+    off.width = c.width * k
+    off.height = c.height * k
+    render3d(off, currentFloor(docRef.current), stRef.current, Math.min(2, window.devicePixelRatio || 1) * k)
+    off.toBlob((blob) => {
       if (blob) {
-        download(blob, 'plan-3d.png')
-        toast.success('PNG-файл скачивается…')
+        download(blob, 'plan-3d-render.png')
+        toast.success(`Рендер ${off.width}×${off.height} px скачивается…`)
       }
     }, 'image/png')
+  }
+
+  const exportGlb = () => {
+    try {
+      exportGltfModel(docRef.current)
+      toast.success('Координатная 3D-модель (GLB) скачивается…')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Не удалось построить 3D-модель')
+    }
   }
 
   const floor = currentFloor(doc)
@@ -213,6 +229,16 @@ export function View3dModal({ doc, onClose }: Props) {
             variant="outline"
             size="sm"
             className="h-8 border-[#57493A] bg-[#3A342C] text-xs text-[#F3EDE2] hover:bg-[#463E33]"
+            onClick={exportGlb}
+            title="Координатная 3D-модель этажа (glTF, метры) — для Blender и 3D-редакторов"
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">GLB</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 border-[#57493A] bg-[#3A342C] text-xs text-[#F3EDE2] hover:bg-[#463E33]"
             onClick={exportPng}
           >
             <ImageDown className="mr-1 h-3.5 w-3.5" />
@@ -242,7 +268,7 @@ export function View3dModal({ doc, onClose }: Props) {
           onPointerCancel={onPointerUp}
         />
         <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-[#211D19]/85 px-4 py-1.5 text-center text-[11px] font-medium text-[#D8CBB6] shadow-lg">
-          Тяните мышью — поворот · колесо — масштаб · двери и окна на 3D-виде не показываются
+          Тяните мышью — поворот · колесо — масштаб · GLB — координатная модель для 3D-редакторов · PNG — рендер из неё
         </div>
       </div>
     </div>
