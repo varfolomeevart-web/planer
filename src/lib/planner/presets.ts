@@ -1,4 +1,4 @@
-import { ENG_COLORS, type ObjLayer } from './types'
+import { ENG_COLORS, type ObjLayer, type OpeningSpec, type StairsSpec } from './types'
 import { KLEN_PRESETS } from './klen-presets'
 
 export interface Preset {
@@ -15,6 +15,12 @@ export interface Preset {
   showNext?: boolean
   /** картинка-схема вместо векторного глифа (раздел «Клён») */
   img?: string
+  /** высота по умолчанию, см (для спецификации рендера) */
+  heightCm?: number
+  /** дефолтная спецификация проёма (двери/окна) */
+  opening?: OpeningSpec
+  /** дефолтная спецификация лестницы */
+  stairs?: StairsSpec
 }
 
 export const CATEGORIES = [
@@ -62,15 +68,15 @@ export const PRESETS: Preset[] = [
   { id: 'display_fridge', name: 'Витрина', category: 'cafe', w: 120, h: 70, color: '#D8E2E0' },
   { id: 'dishwasher', name: 'Посудомоечная машина', category: 'cafe', w: 60, h: 60, color: '#D8D5D0' },
   // Лестницы
-  { id: 'stairs_straight', name: 'Лестница прямая', category: 'stairs', w: 100, h: 280, color: '#EAD9B0', showNext: true },
-  { id: 'stairs_l', name: 'Лестница Г-обр.', category: 'stairs', w: 230, h: 250, color: '#EAD9B0', showNext: true },
+  { id: 'stairs_straight', name: 'Лестница прямая', category: 'stairs', w: 100, h: 280, color: '#EAD9B0', showNext: true, heightCm: 170, stairs: { kind: 'straight', steps: 14, ascent: 'bottom', material: 'дерево' } },
+  { id: 'stairs_l', name: 'Лестница Г-обр.', category: 'stairs', w: 230, h: 250, color: '#EAD9B0', showNext: true, heightCm: 170, stairs: { kind: 'l-shaped', steps: 16, ascent: 'bottom', material: 'дерево' } },
   // Двери
-  { id: 'door_single', name: 'Дверь 80 см', category: 'doors', w: 80, h: 12, color: '#F5EFE3' },
-  { id: 'door_double', name: 'Дверь 140 см', category: 'doors', w: 140, h: 12, color: '#F5EFE3' },
-  { id: 'door_sliding', name: 'Дверь раздвижная', category: 'doors', w: 90, h: 12, color: '#F5EFE3' },
+  { id: 'door_single', name: 'Дверь 80 см', category: 'doors', w: 80, h: 12, color: '#F5EFE3', heightCm: 210, opening: { openType: 'swing-left' } },
+  { id: 'door_double', name: 'Дверь 140 см', category: 'doors', w: 140, h: 12, color: '#F5EFE3', heightCm: 210, opening: { openType: 'double' } },
+  { id: 'door_sliding', name: 'Дверь раздвижная', category: 'doors', w: 90, h: 12, color: '#F5EFE3', heightCm: 210, opening: { openType: 'sliding' } },
   // Окна
-  { id: 'window_120', name: 'Окно 120 см', category: 'windows', w: 120, h: 14, color: '#D7E5EC' },
-  { id: 'window_180', name: 'Окно 180 см', category: 'windows', w: 180, h: 14, color: '#D7E5EC' },
+  { id: 'window_120', name: 'Окно 120 см', category: 'windows', w: 120, h: 14, color: '#D7E5EC', heightCm: 150, opening: { sillCm: 90 } },
+  { id: 'window_180', name: 'Окно 180 см', category: 'windows', w: 180, h: 14, color: '#D7E5EC', heightCm: 150, opening: { sillCm: 90 } },
   // Инженерия: вентиляция — серый
   { id: 'hood', name: 'Вытяжка', category: 'eng', w: 60, h: 60, color: ENG_COLORS.vent.fill, layer: 'vent' },
   { id: 'vent_channel', name: 'Вентканал', category: 'eng', w: 40, h: 40, color: ENG_COLORS.vent.fill, layer: 'vent' },

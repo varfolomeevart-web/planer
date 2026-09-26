@@ -1,16 +1,20 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Dimension, Floor, Partition, PlannerDoc, PlannerObject, Underlay } from '@/lib/planner/types'
-import { ENG_COLORS, GRID_STEPS, OBJECT_COLORS } from '@/lib/planner/types'
-import { ENG_GROUPS } from '@/lib/planner/presets'
+import type { Dimension, Floor, MaterialKind, MaterialSpec, OpeningSpec, Partition, PlannerDoc, PlannerObject, StairsSpec, Underlay } from '@/lib/planner/types'
+import { DEFAULT_CEILING_H, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS } from '@/lib/planner/types'
+import { ENG_GROUPS, getPreset } from '@/lib/planner/presets'
+import { isStairs } from '@/lib/planner/floors'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
+import { objectHeightCm } from '@/lib/planner/view3d'
 import { fmtLen } from '@/lib/planner/draw'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace, FlipHorizontal, Ruler } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,6 +28,7 @@ interface Props {
   underlay: Underlay | null
   underlaySelected: boolean
   onUpdateObject: (id: string, patch: Partial<PlannerObject>) => void
+  onUpdateFloor: (patch: Partial<Floor>) => void
   onMirrorObject: (id: string) => void
   onCommit: () => void
   onDeleteObject: (id: string) => void
@@ -100,6 +105,48 @@ function NumberField({
   )
 }
 
+/** Строка «материал»: тип + уточнение (для этажа и объекта) */
+function MaterialRow({
+  value,
+  onChange,
+  onCommit,
+}: {
+  value?: MaterialSpec
+  onChange: (m: MaterialSpec) => void
+  onCommit: () => void
+}) {
+  return (
+    <div className="flex gap-1.5">
+      <Select
+        value={value?.kind}
+        onValueChange={(v) => {
+          onCommit()
+          onChange({ kind: v as MaterialKind, ...(value?.desc ? { desc: value.desc } : {}), ...(value?.color ? { color: value.color } : {}) })
+        }}
+      >
+        <SelectTrigger className="h-8 w-[46%] shrink-0 border-[#E4DAC8] bg-white text-xs data-[size=default]:h-8">
+          <SelectValue placeholder="Тип материала" />
+        </SelectTrigger>
+        <SelectContent className="max-h-64">
+          {MATERIAL_KINDS.map((k) => (
+            <SelectItem key={k.id} value={k.id} className="text-xs">
+              {k.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        value={value?.desc ?? ''}
+        placeholder={value?.kind ? 'уточнение (дуб, матовая, 60×60)' : 'сначала выберите тип'}
+        disabled={!value?.kind}
+        onFocus={onCommit}
+        onChange={(e) => value?.kind && onChange({ ...value, desc: e.target.value || undefined })}
+        className="h-8 flex-1 border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+      />
+    </div>
+  )
+}
+
 export function PropertiesPanel({
   doc,
   floor,
@@ -110,6 +157,7 @@ export function PropertiesPanel({
   underlay,
   underlaySelected,
   onUpdateObject,
+  onUpdateFloor,
   onMirrorObject,
   onCommit,
   onDeleteObject,
@@ -134,6 +182,12 @@ export function PropertiesPanel({
   const dimLen = selectedDimension ? Math.hypot(selectedDimension.b.x - selectedDimension.a.x, selectedDimension.b.y - selectedDimension.a.y) : 0
   // инженерный слой выделенного объекта (для цветного бейджа)
   const selLayer = selected && selected.layer && selected.layer !== 'furniture' ? selected.layer : null
+  // спецификация рендера для выделенного объекта
+  const isWinObj = selected ? selected.presetId.startsWith('window') : false
+  const isDoorObj = selected ? selected.presetId.startsWith('door') : false
+  const isStairsObj = selected ? isStairs(selected) : false
+  const stSpec = selected?.stairs
+  const defaultStairs: StairsSpec = getPreset(selected?.presetId ?? '').stairs ?? { kind: 'straight', steps: 14, ascent: 'bottom' }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto planner-scroll">
@@ -167,6 +221,80 @@ export function PropertiesPanel({
             по углам комнаты. Enter или клик по первой точке — замкнуть контур.
           </p>
         )}
+      </div>
+
+      {/* Потолок, материалы и описание для рендера */}
+      <div className="border-b border-[#EAE2D5] p-4">
+        <h3 className="mb-2.5 text-xs font-bold tracking-wider text-[#8B7D6B] uppercase">Потолок и материалы</h3>
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="fl-ceil" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+              Высота потолка
+            </Label>
+            <NumberField
+              id="fl-ceil"
+              value={floor.ceilingHeightCm ?? DEFAULT_CEILING_H}
+              min={150}
+              max={800}
+              onCommit={onCommit}
+              onChange={(v) => onUpdateFloor({ ceilingHeightCm: v })}
+              suffix="см"
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Материал пола</Label>
+            <MaterialRow
+              value={floor.floorMaterial}
+              onCommit={onCommit}
+              onChange={(m) => onUpdateFloor({ floorMaterial: m })}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Материал стен</Label>
+            <MaterialRow
+              value={floor.wallMaterial}
+              onCommit={onCommit}
+              onChange={(m) => onUpdateFloor({ wallMaterial: m })}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Материал потолка</Label>
+            <MaterialRow
+              value={floor.ceilingMaterial}
+              onCommit={onCommit}
+              onChange={(m) => onUpdateFloor({ ceilingMaterial: m })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="fl-level" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+              Перепады уровней пола/потолка
+            </Label>
+            <Textarea
+              id="fl-level"
+              value={floor.levelNotes ?? ''}
+              placeholder="напр.: подиум у окна +15 см; потолок над кухней 250 см"
+              onFocus={onCommit}
+              onChange={(e) => onUpdateFloor({ levelNotes: e.target.value })}
+              className="min-h-[56px] border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+            />
+          </div>
+          <div>
+            <Label htmlFor="fl-notes" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+              Описание для рендера
+            </Label>
+            <Textarea
+              id="fl-notes"
+              value={floor.renderNotes ?? ''}
+              placeholder="напр.: окна от пола, высокий плинтус, подвесной потолок с подсветкой"
+              onFocus={onCommit}
+              onChange={(e) => onUpdateFloor({ renderNotes: e.target.value })}
+              className="min-h-[56px] border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+            />
+          </div>
+          <p className="text-[10px] leading-relaxed text-[#8B7D6B]">
+            Эти данные попадают в экспорт JSON (и текстовый бриф для 3D-визуализатора).
+          </p>
+        </div>
       </div>
 
       {/* Свойства объекта */}
@@ -227,7 +355,166 @@ export function PropertiesPanel({
                 </Label>
                 <NumberField id="obj-h" value={selected.h} min={5} max={2000} onCommit={onCommit} onChange={(v) => onUpdateObject(selected.id, { h: v })} suffix="см" />
               </div>
+              <div>
+                <Label htmlFor="obj-z" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                  {isDoorObj || isWinObj ? 'Высота проёма' : isStairsObj ? 'Высота лестницы' : 'Высота'}
+                </Label>
+                <NumberField
+                  id="obj-z"
+                  value={objectHeightCm(selected)}
+                  min={1}
+                  max={1200}
+                  onCommit={onCommit}
+                  onChange={(v) => onUpdateObject(selected.id, { heightCm: v })}
+                  suffix="см"
+                />
+              </div>
             </div>
+
+            <div>
+              <Label htmlFor="obj-model" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                Модель / бренд
+              </Label>
+              <Input
+                id="obj-model"
+                value={selected.model ?? ''}
+                placeholder="напр.: POLAIR ШХ-0,5 ДС"
+                onFocus={onCommit}
+                onChange={(e) => onUpdateObject(selected.id, { model: e.target.value || undefined })}
+                className="h-8 border-[#E4DAC8] bg-white text-sm focus-visible:ring-[#E8730C]/40"
+              />
+            </div>
+
+            <div>
+              <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Материал</Label>
+              <MaterialRow
+                value={selected.material}
+                onCommit={onCommit}
+                onChange={(m) => onUpdateObject(selected.id, { material: m })}
+              />
+            </div>
+
+            {(isDoorObj || isWinObj) && (
+              <div className="space-y-2 rounded-lg bg-[#F7F1E6] p-2.5">
+                <div className="text-[10px] font-bold tracking-wider text-[#8B7D6B] uppercase">Проём: {isWinObj ? 'окно' : 'дверь'}</div>
+                {isDoorObj && (
+                  <div>
+                    <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Тип открывания</Label>
+                    <Select
+                      value={selected.opening?.openType}
+                      onValueChange={(v) => {
+                        onCommit()
+                        onUpdateObject(selected.id, { opening: { ...(selected.opening ?? {}), openType: v as OpeningSpec['openType'] } })
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-full border-[#E4DAC8] bg-white text-xs data-[size=default]:h-8">
+                        <SelectValue placeholder="не указано" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {DOOR_OPEN_TYPES.map((t) => (
+                          <SelectItem key={t.id} value={t.id} className="text-xs">
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {isWinObj && (
+                  <div>
+                    <Label htmlFor="obj-sill" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      Подоконник (от пола до низа проёма)
+                    </Label>
+                    <NumberField
+                      id="obj-sill"
+                      value={selected.opening?.sillCm ?? getPreset(selected.presetId).opening?.sillCm ?? 90}
+                      min={0}
+                      max={300}
+                      onCommit={onCommit}
+                      onChange={(v) => onUpdateObject(selected.id, { opening: { ...(selected.opening ?? {}), sillCm: v } })}
+                      suffix="см"
+                    />
+                  </div>
+                )}
+                <Input
+                  value={selected.opening?.desc ?? ''}
+                  placeholder="описание проёма (стеклопакет, фрамуга…)"
+                  onFocus={onCommit}
+                  onChange={(e) => onUpdateObject(selected.id, { opening: { ...(selected.opening ?? {}), desc: e.target.value || undefined } })}
+                  className="h-8 border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+                />
+              </div>
+            )}
+
+            {isStairsObj && (
+              <div className="space-y-2 rounded-lg bg-[#F7F1E6] p-2.5">
+                <div className="text-[10px] font-bold tracking-wider text-[#8B7D6B] uppercase">Лестница</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Тип</Label>
+                    <Select
+                      value={stSpec?.kind}
+                      onValueChange={(v) => {
+                        onCommit()
+                        onUpdateObject(selected.id, { stairs: { ...(stSpec ?? defaultStairs), kind: v as StairsSpec['kind'] } })
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-full border-[#E4DAC8] bg-white text-xs data-[size=default]:h-8">
+                        <SelectValue placeholder="не указано" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {STAIRS_KINDS.map((k) => (
+                          <SelectItem key={k.id} value={k.id} className="text-xs">
+                            {k.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="obj-steps" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+                      Ступеней
+                    </Label>
+                    <NumberField
+                      id="obj-steps"
+                      value={stSpec?.steps ?? defaultStairs.steps}
+                      min={1}
+                      max={100}
+                      onCommit={onCommit}
+                      onChange={(v) => onUpdateObject(selected.id, { stairs: { ...(stSpec ?? defaultStairs), steps: Math.round(v) } })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">Направление подъёма</Label>
+                  <Select
+                    value={stSpec?.ascent}
+                    onValueChange={(v) => {
+                      onCommit()
+                      onUpdateObject(selected.id, { stairs: { ...(stSpec ?? defaultStairs), ascent: v as StairsSpec['ascent'] } })
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-full border-[#E4DAC8] bg-white text-xs data-[size=default]:h-8">
+                      <SelectValue placeholder="не указано" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {STAIRS_ASCENTS.map((a) => (
+                        <SelectItem key={a.id} value={a.id} className="text-xs">
+                          {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Input
+                  value={stSpec?.material ?? ''}
+                  placeholder="материал: дерево (дуб), бетон, металл…"
+                  onFocus={onCommit}
+                  onChange={(e) => onUpdateObject(selected.id, { stairs: { ...(stSpec ?? defaultStairs), material: e.target.value || undefined } })}
+                  className="h-8 border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+                />
+              </div>
+            )}
 
             <div>
               <Label htmlFor="obj-angle" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">

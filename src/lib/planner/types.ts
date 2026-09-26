@@ -6,6 +6,105 @@ export interface Pt {
 /** Слой объекта: мебель или инженерные сети */
 export type ObjLayer = 'furniture' | 'vent' | 'water' | 'electric'
 
+/* ---------- Спецификация для 3D-рендера: материалы, проёмы, лестницы ---------- */
+
+/** Тип материала поверхности */
+export type MaterialKind =
+  | 'paint'
+  | 'tile'
+  | 'porcelain'
+  | 'wood'
+  | 'laminate'
+  | 'metal'
+  | 'concrete'
+  | 'brick'
+  | 'stone'
+  | 'plaster'
+  | 'carpet'
+  | 'fabric'
+  | 'glass'
+  | 'other'
+
+/** Человекочитаемые названия материалов (для UI и текстового брифа) */
+export const MATERIAL_KINDS: { id: MaterialKind; name: string }[] = [
+  { id: 'paint', name: 'Покраска' },
+  { id: 'tile', name: 'Плитка' },
+  { id: 'porcelain', name: 'Керамогранит' },
+  { id: 'wood', name: 'Дерево (массив)' },
+  { id: 'laminate', name: 'Ламинат' },
+  { id: 'metal', name: 'Металл' },
+  { id: 'concrete', name: 'Бетон' },
+  { id: 'brick', name: 'Кирпич' },
+  { id: 'stone', name: 'Камень' },
+  { id: 'plaster', name: 'Штукатурка' },
+  { id: 'carpet', name: 'Ковролин' },
+  { id: 'fabric', name: 'Ткань' },
+  { id: 'glass', name: 'Стекло' },
+  { id: 'other', name: 'Другое' },
+]
+
+/** Материал поверхности: тип + уточнение (порода, фактура, размер плитки) + цвет */
+export interface MaterialSpec {
+  kind: MaterialKind
+  /** уточнение: «дуб», «нержавеющая сталь», «матовая», «керамогранит 60×60» */
+  desc?: string
+  /** hex-цвет (#RRGGBB) */
+  color?: string
+}
+
+/** Тип открывания двери */
+export type DoorOpenType = 'swing-left' | 'swing-right' | 'double' | 'sliding' | 'folding' | 'fixed'
+
+export const DOOR_OPEN_TYPES: { id: DoorOpenType; name: string }[] = [
+  { id: 'swing-left', name: 'Распашная влево' },
+  { id: 'swing-right', name: 'Распашная вправо' },
+  { id: 'double', name: 'Двустворчатая' },
+  { id: 'sliding', name: 'Раздвижная' },
+  { id: 'folding', name: 'Складная' },
+  { id: 'fixed', name: 'Не открывается' },
+]
+
+/** Спецификация проёма (дверь/окно): высоты и тип открывания.
+ *  Высота проёма хранится в heightCm самого объекта (единый источник), здесь — остальное. */
+export interface OpeningSpec {
+  /** подоконник: от пола до низа проёма, см (окна) */
+  sillCm?: number
+  /** тип открывания (двери) */
+  openType?: DoorOpenType
+  desc?: string
+}
+
+/** Тип лестницы */
+export type StairsKind = 'straight' | 'l-shaped' | 'spiral'
+
+/** Локальный край объекта-лестницы, в сторону которого идёт подъём (до поворота angle) */
+export type StairsAscent = 'top' | 'right' | 'bottom' | 'left'
+
+/** Спецификация лестницы: тип, ступени, материал, направление подъёма */
+export interface StairsSpec {
+  kind: StairsKind
+  /** количество ступеней */
+  steps: number
+  /** направление подъёма — локальный край, к которому поднимаемся */
+  ascent: StairsAscent
+  /** материал: «дерево (дуб)», «бетон», «металл/дерево»… */
+  material?: string
+  desc?: string
+}
+
+export const STAIRS_KINDS: { id: StairsKind; name: string }[] = [
+  { id: 'straight', name: 'Маршевая (прямая)' },
+  { id: 'l-shaped', name: 'Г-образная' },
+  { id: 'spiral', name: 'Винтовая' },
+]
+
+export const STAIRS_ASCENTS: { id: StairsAscent; name: string }[] = [
+  { id: 'top', name: 'Вверх плана' },
+  { id: 'right', name: 'Вправо плана' },
+  { id: 'bottom', name: 'Вниз плана' },
+  { id: 'left', name: 'Влево плана' },
+]
+
 export interface PlannerObject {
   id: string
   presetId: string
@@ -25,6 +124,18 @@ export interface PlannerObject {
   flip?: boolean
   /** лестница: на своём этаже рисуется пунктиром, на этажах выше — целиком */
   showNext?: boolean
+
+  /* --- спецификация для 3D-рендера --- */
+  /** высота предмета, см (переопределяет высоту пресета) */
+  heightCm?: number
+  /** конкретная модель/бренд, напр. «Холодильный шкаф POLAIR ШХ-0,5 ДС» */
+  model?: string
+  /** материал корпуса/обивки */
+  material?: MaterialSpec
+  /** проём: подоконник и тип открывания (двери/окна) */
+  opening?: OpeningSpec
+  /** лестница: тип, ступени, материал, направление подъёма */
+  stairs?: StairsSpec
 }
 
 /** Внутренняя стена-перегородка: полилиния в сантиметрах */
@@ -70,6 +181,51 @@ export interface Floor {
   objects: PlannerObject[]
   dimensions: Dimension[]
   underlay: Underlay | null
+
+  /* --- спецификация для 3D-рендера --- */
+  /** высота потолка, см (по умолчанию 270) */
+  ceilingHeightCm?: number
+  /** материал пола */
+  floorMaterial?: MaterialSpec
+  /** материал стен */
+  wallMaterial?: MaterialSpec
+  /** материал потолка */
+  ceilingMaterial?: MaterialSpec
+  /** перепады уровней пола/потолка: текст («подиум у окна +15 см, потолок в зоне кухни 250 см»…) */
+  levelNotes?: string
+  /** свободное описание для рендера («окна от пола», «плинтус высокий»…) */
+  renderNotes?: string
+}
+
+/** Высота потолка по умолчанию, см */
+export const DEFAULT_CEILING_H = 270
+
+/** Эффективная высота потолка этажа */
+export function ceilingH(floor: Floor): number {
+  return floor.ceilingHeightCm ?? DEFAULT_CEILING_H
+}
+
+/** Человекочитаемое название материала или «—» */
+export function materialName(m?: MaterialSpec): string {
+  if (!m) return '—'
+  const base = MATERIAL_KINDS.find((k) => k.id === m.kind)?.name ?? 'Другое'
+  return m.desc ? `${base} (${m.desc})` : base
+}
+
+/** Направление подъёма лестницы в мировых координатах плана: «на север (вверх плана)» и т.п. */
+export function ascentWorldName(obj: PlannerObject): string {
+  const st = obj.stairs
+  if (!st) return '—'
+  const local: Record<StairsAscent, [number, number]> = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] }
+  const [lx, ly] = local[st.ascent]
+  const rad = (obj.angle * Math.PI) / 180
+  const wx = lx * Math.cos(rad) - ly * Math.sin(rad)
+  const wy = lx * Math.sin(rad) + ly * Math.cos(rad)
+  // «север» = верх плана (−y); сектор из 8 направлений
+  const names = ['север (вверх плана)', 'северо-восток', 'восток (вправо плана)', 'юго-восток', 'юг (вниз плана)', 'юго-запад', 'запад (влево плана)', 'северо-запад']
+  const a = Math.atan2(wx, -wy)
+  const idx = Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8
+  return names[idx]
 }
 
 /** Видимость инженерных слоёв */

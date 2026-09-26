@@ -3,20 +3,23 @@ import { normalizeDoc } from './migrate'
 import { currentFloor } from './types'
 import { objectsBBox, pointsBBox, rectCorners, unionBBox } from './geometry'
 import { drawScene, preloadPresetImages, preloadUnderlayImage } from './draw'
+import { buildRenderBrief } from './brief'
 
 export interface SaveFile {
   version: number
   doc: PlannerDoc
   showGrid: boolean
+  /** автогенерированный текстовый бриф для 3D-визуализатора (v3) */
+  brief?: string
 }
 
 export function makeSaveFile(doc: PlannerDoc, showGrid: boolean): SaveFile {
-  return { version: 2, doc, showGrid }
+  return { version: 3, doc, showGrid, brief: buildRenderBrief(doc) }
 }
 
 /**
  * Валидация файла проекта / автосохранения.
- * Принимает новые (v2, многоэтажные) и все старые форматы — см. migrate.normalizeDoc.
+ * Принимает новые (v3, v2 — многоэтажные) и все старые форматы — см. migrate.normalizeDoc.
  */
 export function validateSaveFile(data: unknown): PlannerDoc | null {
   return normalizeDoc(data)

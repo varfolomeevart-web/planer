@@ -1,8 +1,62 @@
-import type { Dimension, Floor, LayerVis, PlannerDoc, PlannerObject, Partition, Pt, Underlay } from './types'
+import type { Dimension, Floor, LayerVis, MaterialSpec, OpeningSpec, PlannerDoc, PlannerObject, Partition, Pt, StairsSpec, Underlay } from './types'
 import { DEFAULT_LAYERS, DEFAULT_GRID_STEP, ENG_COLORS, MAX_FLOORS, emptyFloor, uid } from './types'
 
 /** Старая палитра инженерии (до цветового разделения по слоям) — при загрузке заменяется на цвет слоя */
 const OLD_ENG_COLORS = new Set(['#e3e6e8', '#cbdde8', '#d8cbb6', '#f0e8c8', '#f5efd8'])
+
+const MATERIAL_KIND_SET = new Set([
+  'paint', 'tile', 'porcelain', 'wood', 'laminate', 'metal', 'concrete', 'brick', 'stone', 'plaster', 'carpet', 'fabric', 'glass', 'other',
+])
+const DOOR_OPEN_SET = new Set(['swing-left', 'swing-right', 'double', 'sliding', 'folding', 'fixed'])
+const STAIRS_KIND_SET = new Set(['straight', 'l-shaped', 'spiral'])
+const STAIRS_ASCENT_SET = new Set(['top', 'right', 'bottom', 'left'])
+
+function hexColor(v: unknown): string | null {
+  const s = str(v)
+  return s && /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : null
+}
+
+function materialOf(v: unknown): MaterialSpec | undefined {
+  if (!isObj(v)) return undefined
+  const kind = str(v.kind)
+  if (!kind || !MATERIAL_KIND_SET.has(kind)) return undefined
+  const out: MaterialSpec = { kind: kind as MaterialSpec['kind'] }
+  const desc = str(v.desc)
+  if (desc) out.desc = desc
+  const color = hexColor(v.color)
+  if (color) out.color = color
+  return out
+}
+
+function openingOf(v: unknown): OpeningSpec | undefined {
+  if (!isObj(v)) return undefined
+  const out: OpeningSpec = {}
+  const sill = num(v.sillCm)
+  if (sill !== null) out.sillCm = Math.max(0, Math.min(sill, 300))
+  const openType = str(v.openType)
+  if (openType && DOOR_OPEN_SET.has(openType)) out.openType = openType as OpeningSpec['openType']
+  const desc = str(v.desc)
+  if (desc) out.desc = desc
+  return out.sillCm !== undefined || out.openType !== undefined || out.desc !== undefined ? out : undefined
+}
+
+function stairsOf(v: unknown): StairsSpec | undefined {
+  if (!isObj(v)) return undefined
+  const kind = str(v.kind)
+  const steps = num(v.steps)
+  const ascent = str(v.ascent)
+  if (!kind || !STAIRS_KIND_SET.has(kind) || steps === null || !ascent || !STAIRS_ASCENT_SET.has(ascent)) return undefined
+  const out: StairsSpec = {
+    kind: kind as StairsSpec['kind'],
+    steps: Math.max(1, Math.min(Math.round(steps), 100)),
+    ascent: ascent as StairsSpec['ascent'],
+  }
+  const material = str(v.material)
+  if (material) out.material = material
+  const desc = str(v.desc)
+  if (desc) out.desc = desc
+  return out
+}
 
 /**
  * Универсальная миграция сохранений.
@@ -66,6 +120,17 @@ function objOf(v: unknown): PlannerObject | null {
   out.layer = layer
   if (typeof v.flip === 'boolean') out.flip = v.flip
   if (typeof v.showNext === 'boolean') out.showNext = v.showNext
+  // спецификация для 3D-рендера (v3): высота, модель, материал, проёмы, лестницы
+  const hCm = num(v.heightCm)
+  if (hCm !== null) out.heightCm = Math.max(1, Math.min(hCm, 1200))
+  const model = str(v.model)
+  if (model) out.model = model
+  const mat = materialOf(v.material)
+  if (mat) out.material = mat
+  const opening = openingOf(v.opening)
+  if (opening) out.opening = opening
+  const stairs = stairsOf(v.stairs)
+  if (stairs) out.stairs = stairs
   return out as unknown as PlannerObject
 }
 
@@ -118,6 +183,19 @@ function floorOf(v: unknown, idx: number): Floor {
   f.objects = (Array.isArray(v.objects) ? v.objects : []).map(objOf).filter((o): o is PlannerObject => o !== null)
   f.dimensions = (Array.isArray(v.dimensions) ? v.dimensions : []).map(dimensionOf).filter((d): d is Dimension => d !== null)
   f.underlay = underlayOf(v.underlay)
+  // спецификация для 3D-рендера (v3): потолок, материалы, перепады уровней, описание
+  const ceil = num(v.ceilingHeightCm)
+  if (ceil !== null) f.ceilingHeightCm = Math.max(100, Math.min(ceil, 1000))
+  const fm = materialOf(v.floorMaterial)
+  if (fm) f.floorMaterial = fm
+  const wm = materialOf(v.wallMaterial)
+  if (wm) f.wallMaterial = wm
+  const cm = materialOf(v.ceilingMaterial)
+  if (cm) f.ceilingMaterial = cm
+  const ln = str(v.levelNotes)
+  if (ln) f.levelNotes = ln
+  const rn = str(v.renderNotes)
+  if (rn) f.renderNotes = rn
   return f
 }
 

@@ -224,13 +224,18 @@ function discPts(L: (x: number, y: number) => Pt, cx: number, cy: number, r: num
  * y — глубина (вниз плана); спинки/изголовья — у дальнего края y = -h/2
  * (как в 2D-схемах). Отзеркаливание (o.flip) применяется к локальной оси x.
  */
+/** Высота объекта, см: переопределение из спецификации (heightCm) или высота пресета. Экспорт для UI и брифа. */
+export function objectHeightCm(o: PlannerObject): number {
+  return o.heightCm ?? PRESET_H[o.presetId] ?? 60
+}
+
 /** Сборка объекта из объёмных частей (экспортируется для перспективного рендера) */
 export function objectParts(o: PlannerObject): Part[] {
   const preset = getPreset(o.presetId)
   const color = o.color || preset.color
   const w = o.w
   const d = o.h
-  const h = PRESET_H[o.presetId] ?? 60
+  const h = objectHeightCm(o)
   const zBase = PRESET_ZOFF[o.presetId] ?? 0
   const hw = w / 2
   const hh = d / 2

@@ -474,6 +474,10 @@ export function Planner() {
       }
       if (preset.layer) obj.layer = preset.layer
       if (preset.showNext) obj.showNext = true
+      // спецификация для 3D-рендера: дефолты из пресета (высота, проём, лестница)
+      if (preset.heightCm) obj.heightCm = preset.heightCm
+      if (preset.opening) obj.opening = { ...preset.opening }
+      if (preset.stairs) obj.stairs = { ...preset.stairs }
       pushHistory()
       withFloors((f) => ({ ...f, objects: [...f.objects, obj] }))
       selectedIdRef.current = obj.id
@@ -515,6 +519,9 @@ export function Planner() {
     },
     [withFloors],
   )
+
+  /** Патч свойств текущего этажа (потолок, материалы, заметки для рендера) */
+  const updateFloor = useCallback((patch: Partial<Floor>) => withFloors((f) => ({ ...f, ...patch })), [withFloors])
 
   /** Отзеркалить объект (горизонтально) */
   const toggleMirror = useCallback(
@@ -665,14 +672,29 @@ export function Planner() {
     }
     const src = currentFloor(d)
     pushHistory()
+    const floorSpec = {
+      ...(src.ceilingHeightCm !== undefined ? { ceilingHeightCm: src.ceilingHeightCm } : {}),
+      ...(src.floorMaterial ? { floorMaterial: { ...src.floorMaterial } } : {}),
+      ...(src.wallMaterial ? { wallMaterial: { ...src.wallMaterial } } : {}),
+      ...(src.ceilingMaterial ? { ceilingMaterial: { ...src.ceilingMaterial } } : {}),
+      ...(src.levelNotes !== undefined ? { levelNotes: src.levelNotes } : {}),
+      ...(src.renderNotes !== undefined ? { renderNotes: src.renderNotes } : {}),
+    }
     const copy: Floor = {
       id: uid(),
       name: `${src.name} — копия`,
       room: src.room ? src.room.map((p) => ({ ...p })) : null,
       partitions: src.partitions.map((p) => ({ id: uid(), pts: p.pts.map((q) => ({ ...q })) })),
-      objects: src.objects.map((o) => ({ ...o, id: uid() })),
+      objects: src.objects.map((o) => ({
+        ...o,
+        id: uid(),
+        ...(o.material ? { material: { ...o.material } } : {}),
+        ...(o.opening ? { opening: { ...o.opening } } : {}),
+        ...(o.stairs ? { stairs: { ...o.stairs } } : {}),
+      })),
       dimensions: src.dimensions.map((m) => ({ id: uid(), a: { ...m.a }, b: { ...m.b } })),
       underlay: src.underlay ? { ...src.underlay } : null,
+      ...floorSpec,
     }
     const idx = d.floors.findIndex((f) => f.id === src.id)
     const floors = [...d.floors]
@@ -1628,6 +1650,7 @@ export function Planner() {
             underlay={fl.underlay}
             underlaySelected={underlaySelected}
             onUpdateObject={updateObject}
+            onUpdateFloor={updateFloor}
             onMirrorObject={toggleMirror}
             onCommit={() => pushHistory()}
             onDeleteObject={deleteObject}
