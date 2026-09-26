@@ -107,7 +107,7 @@ function partitionsBrief(f: Floor): string[] {
     const len = Math.round(polyLenCm(p.pts))
     const th = partitionThickness(p)
     const shape = p.pts.length === 2 ? `отрезок от ${fmtPt(p.pts[0])} до ${fmtPt(p.pts[1])}` : `${plural(p.pts.length, ['узел', 'узла', 'узлов'])}: ${p.pts.map(fmtPt).join(' → ')}`
-    lines.push(`    — Перегородка ${i + 1}: ${shape} см, длина ${len} см, толщина ${th} см.`)
+    lines.push(`    — Перегородка ${i + 1}: ${shape} см, длина ${len} см, толщина ${th} см${p.material ? `, конструкция: ${p.material}` : ''}.`)
   })
   return lines
 }

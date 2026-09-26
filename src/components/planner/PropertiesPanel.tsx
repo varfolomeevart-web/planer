@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { CameraView, Dimension, Floor, MaterialKind, MaterialSpec, OpeningSpec, Partition, PlannerDoc, PlannerObject, StairsSpec, Underlay } from '@/lib/planner/types'
-import { DEFAULT_CEILING_H, DEFAULT_PARTITION_THICKNESS, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, LIGHT_PRESETS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS, VIEW_PRESETS, uid } from '@/lib/planner/types'
+import { DEFAULT_CEILING_H, DEFAULT_PARTITION_THICKNESS, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, LIGHT_PRESETS, MATERIAL_KINDS, OBJECT_COLORS, PARTITION_MATERIAL_PRESETS, STAIRS_ASCENTS, STAIRS_KINDS, VIEW_PRESETS, uid } from '@/lib/planner/types'
 import { ENG_GROUPS, getPreset } from '@/lib/planner/presets'
 import { isStairs } from '@/lib/planner/floors'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
@@ -733,6 +733,36 @@ export function PropertiesPanel({
                 onCommit={onCommit}
                 onChange={(v) => onUpdatePartition(selectedPartition.id, { thicknessCm: Math.round(v) })}
               />
+              <p className="mt-1 text-[10px] text-[#8B7D6B]">Попадает в ТЗ для 3D-визуализатора.</p>
+            </div>
+            <div>
+              <Label htmlFor="part-material" className="text-[11px] text-[#8B7D6B]">
+                Конструкция / материал
+              </Label>
+              <Input
+                id="part-material"
+                value={selectedPartition.material ?? ''}
+                placeholder="напр. ГКЛ на металлокаркасе, покраска"
+                onFocus={onCommit}
+                onChange={(e) => onUpdatePartition(selectedPartition.id, { material: e.target.value || undefined })}
+                className="h-8 border-[#E4DAC8] bg-white text-sm focus-visible:ring-[#E8730C]/40"
+              />
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {PARTITION_MATERIAL_PRESETS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      onCommit()
+                      onUpdatePartition(selectedPartition.id, { material: s })
+                    }}
+                    className="rounded-full bg-[#F7F1E6] px-2 py-0.5 text-[10px] font-medium text-[#6B5D4F] hover:bg-[#EFE3CC]"
+                    title="Задать конструкцию перегородки"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
               <p className="mt-1 text-[10px] text-[#8B7D6B]">Попадает в ТЗ для 3D-визуализатора.</p>
             </div>
             <p className="text-xs leading-relaxed text-[#8B7D6B]">

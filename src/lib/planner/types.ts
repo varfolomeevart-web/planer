@@ -173,6 +173,8 @@ export interface Partition {
   pts: Pt[]
   /** толщина стены, см (для 3D-рендера; undefined — не указана) */
   thicknessCm?: number
+  /** конструкция/материал: «ГКЛ на металлокаркасе», «кирпич, покраска»… */
+  material?: string
 }
 
 /** Толщина перегородки по умолчанию, см (типовая ГКЛ/пазогребневая) */
@@ -182,6 +184,16 @@ export const DEFAULT_PARTITION_THICKNESS = 10
 export function partitionThickness(p: Partition): number {
   return p.thicknessCm ?? DEFAULT_PARTITION_THICKNESS
 }
+
+/** Быстрые шаблоны конструкции перегородки (чипы в панели) */
+export const PARTITION_MATERIAL_PRESETS: string[] = [
+  'ГКЛ на металлокаркасе, покраска',
+  'ГКЛ двойной на каркасе (звукоизоляция)',
+  'Пазогребневая плита, покраска',
+  'Кирпич, штукатурка и покраска',
+  'Газобетонный блок, штукатурка',
+  'Стеклянная перегородка (закалённое стекло)',
+]
 
 /** Выноска-размер: отрезок с подписью длины */
 export interface Dimension {

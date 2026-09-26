@@ -695,7 +695,7 @@ export function Planner() {
       id: uid(),
       name: `${src.name} — копия`,
       room: src.room ? src.room.map((p) => ({ ...p })) : null,
-      partitions: src.partitions.map((p) => ({ id: uid(), pts: p.pts.map((q) => ({ ...q })), ...(p.thicknessCm !== undefined ? { thicknessCm: p.thicknessCm } : {}) })),
+      partitions: src.partitions.map((p) => ({ id: uid(), pts: p.pts.map((q) => ({ ...q })), ...(p.thicknessCm !== undefined ? { thicknessCm: p.thicknessCm } : {}), ...(p.material !== undefined ? { material: p.material } : {}) })),
       objects: src.objects.map((o) => ({
         ...o,
         id: uid(),

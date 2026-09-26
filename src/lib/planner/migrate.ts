@@ -142,6 +142,9 @@ function partitionOf(v: unknown): Partition | null {
   // толщина стены (v1.6): 2–100 см
   const th = num(v.thicknessCm)
   if (th !== null) out.thicknessCm = Math.max(2, Math.min(Math.round(th), 100))
+  // конструкция/материал (v1.7): «ГКЛ на металлокаркасе» и т.п.
+  const mat = str(v.material)
+  if (mat) out.material = mat
   return out
 }
 
