@@ -53,3 +53,9 @@ server.log
 # Skills directory
 /skills/download/
 tool-results/
+
+# Секреты и чекпоинты — никогда не коммитить
+scripts/surge-deploy.py
+download/*.zip
+RESTORE-INFO.txt
+.wl-backup
