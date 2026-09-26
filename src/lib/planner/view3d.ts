@@ -1,4 +1,5 @@
-import type { Floor, LayerVis, PlannerObject, Pt } from './types'
+import type { Floor, LayerVis, Partition, PlannerObject, Pt } from './types'
+import { ceilingH, partitionThickness } from './types'
 import { isDoorWindowPreset, getPreset } from './presets'
 import { objectCorners } from './geometry'
 
@@ -24,7 +25,6 @@ export interface View3dState {
 export const VIEW3D_DEFAULT: View3dState = { azimuth: -35, elevation: 35, zoom: 1, walls: 'hide' }
 
 export const WALL_H = 270
-const PART_H = 250
 const SLAB_H = 12
 
 const FLOOR_FILL = '#F6F0E4'
@@ -32,6 +32,19 @@ const FLOOR_EDGE = '#D8CBB6'
 export const WALL_FILL = '#EFE6D6'
 export const WALL_EDGE = '#B9A88C'
 export const PART_FILL = '#E3D7C1'
+
+/**
+ * Стиль перегородки по её конструкции: цвет, обводка и прозрачность.
+ * Стекло — полупрозрачное, кирпич — терракотовый, блоки — светлый бетон,
+ * по умолчанию (ГКЛ и прочее) — тёплый бежевый.
+ */
+export function partitionStyle(p: Partition): { fill: string; stroke: string; alpha?: number } {
+  const m = (p.material ?? '').toLowerCase()
+  if (/стекл|glass/.test(m)) return { fill: '#D9E8EE', stroke: '#9FBECB', alpha: 0.45 }
+  if (/кирпич/.test(m)) return { fill: '#C98D6F', stroke: '#A96E52' }
+  if (/газобетон|пазогребн|пгп|блок/.test(m)) return { fill: '#EAE1CF', stroke: '#C7B99E' }
+  return { fill: PART_FILL, stroke: '#C4B394' }
+}
 
 /** Высоты объектов, см (по пресетам; «Клён» — из каталога) */
 const PRESET_H: Record<string, number> = {
@@ -656,6 +669,9 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
 
   const lw = (v: number) => Math.max(1, v * dpr)
 
+  /** высота стен и перегородок — высота потолка этажа (строгое соответствие ТЗ) */
+  const wallH = ceilingH(floor)
+
   // ---------- полигон пола в плане ----------
   const floorPlan: Pt[] = []
   if (hasRoom && floor.room) {
@@ -684,7 +700,7 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
   const fitPts: U3[] = []
   for (const p of floorPlan) {
     fitPts.push(proj(p.x, p.y, -SLAB_H))
-    fitPts.push(proj(p.x, p.y, hasRoom ? WALL_H : 0))
+    fitPts.push(proj(p.x, p.y, hasRoom ? wallH : 0))
   }
   for (const b of built) {
     for (const part of b.parts) {
@@ -809,7 +825,7 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
       const near = nearSide(a, b)
       const ed = Math.hypot(b.x - a.x, b.y - a.y) || 1
       const lam = Math.abs((-(b.y - a.y) / ed) * light.x + ((b.x - a.x) / ed) * light.y)
-      const pts = [proj(a.x, a.y, 0), proj(b.x, b.y, 0), proj(b.x, b.y, WALL_H), proj(a.x, a.y, WALL_H)]
+      const pts = [proj(a.x, a.y, 0), proj(b.x, b.y, 0), proj(b.x, b.y, wallH), proj(a.x, a.y, wallH)]
       const depth = (a.x * sinA + a.y * cosA + b.x * sinA + b.y * cosA) / 2
       const face: WallFace = {
         pts,
@@ -824,21 +840,41 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
   }
 
   for (const part of floor.partitions) {
+    const stl = partitionStyle(part)
+    const t = partitionThickness(part)
     for (let i = 0; i + 1 < part.pts.length; i++) {
       const a = part.pts[i]
       const b = part.pts[i + 1]
-      const near = nearSide(a, b)
-      const pts = [proj(a.x, a.y, 0), proj(b.x, b.y, 0), proj(b.x, b.y, PART_H), proj(a.x, a.y, PART_H)]
-      const depth = (a.x * sinA + a.y * cosA + b.x * sinA + b.y * cosA) / 2
-      const face: WallFace = {
-        pts,
-        depth,
-        fillFar: shade(PART_FILL, 0.94),
-        fillNear: shade(PART_FILL, 0.82),
-        stroke: '#C4B394',
+      // объёмная перегородка: толщина симметрично оси линии, крышка и торцы
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      const nx = (-dy / len) * (t / 2)
+      const ny = (dx / len) * (t / 2)
+      const A1 = { x: a.x + nx, y: a.y + ny }
+      const A2 = { x: a.x - nx, y: a.y - ny }
+      const B1 = { x: b.x + nx, y: b.y + ny }
+      const B2 = { x: b.x - nx, y: b.y - ny }
+      const fillF = stl.alpha !== undefined ? shadeA(stl.fill, 0.94, stl.alpha) : shade(stl.fill, 0.94)
+      const fillN = stl.alpha !== undefined ? shadeA(stl.fill, 0.82, stl.alpha) : shade(stl.fill, 0.82)
+      const faces: { c: Pt; pts: U3[] }[] = [
+        { c: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, pts: [proj(A1.x, A1.y, wallH), proj(B1.x, B1.y, wallH), proj(B2.x, B2.y, wallH), proj(A2.x, A2.y, wallH)] },
+        { c: { x: (A1.x + B1.x) / 2, y: (A1.y + B1.y) / 2 }, pts: [proj(A1.x, A1.y, 0), proj(B1.x, B1.y, 0), proj(B1.x, B1.y, wallH), proj(A1.x, A1.y, wallH)] },
+        { c: { x: (A2.x + B2.x) / 2, y: (A2.y + B2.y) / 2 }, pts: [proj(A2.x, A2.y, 0), proj(B2.x, B2.y, 0), proj(B2.x, B2.y, wallH), proj(A2.x, A2.y, wallH)] },
+        { c: a, pts: [proj(A1.x, A1.y, 0), proj(A2.x, A2.y, 0), proj(A2.x, A2.y, wallH), proj(A1.x, A1.y, wallH)] },
+        { c: b, pts: [proj(B1.x, B1.y, 0), proj(B2.x, B2.y, 0), proj(B2.x, B2.y, wallH), proj(B1.x, B1.y, wallH)] },
+      ]
+      for (const f of faces) {
+        const face: WallFace = {
+          pts: f.pts,
+          depth: f.c.x * sinA + f.c.y * cosA,
+          fillFar: fillF,
+          fillNear: fillN,
+          stroke: stl.stroke,
+        }
+        if (nearSide(f.c, f.c)) nearFaces.push(face)
+        else farFaces.push(face)
       }
-      if (near) nearFaces.push(face)
-      else farFaces.push(face)
     }
   }
 
@@ -855,8 +891,8 @@ export function render3d(canvas: HTMLCanvasElement, floor: Floor, st: View3dStat
       const a = room[i]
       const b = room[(i + 1) % room.length]
       if (nearSide(a, b)) continue
-      const p1 = proj(a.x, a.y, WALL_H)
-      const p2 = proj(b.x, b.y, WALL_H)
+      const p1 = proj(a.x, a.y, wallH)
+      const p2 = proj(b.x, b.y, wallH)
       ctx.moveTo(ox + p1.u * s, oy + p1.v * s)
       ctx.lineTo(ox + p2.u * s, oy + p2.v * s)
     }
@@ -1142,6 +1178,10 @@ export interface WallSeg {
   fill: string
   stroke: string
   kind: 'wall' | 'partition'
+  /** толщина объёма, см (перегородки — по спецификации) */
+  thick?: number
+  /** прозрачность 0..1 (стеклянные перегородки) */
+  alpha?: number
 }
 
 export interface Scene3d {
@@ -1168,16 +1208,27 @@ export function buildScene(floor: Floor, layers?: LayerVis): Scene3d {
   // предметы, лежащие на других предметах, поднимаются на их верх
   applyStacking(objectsParts)
   const walls: WallSeg[] = []
+  const wallH = ceilingH(floor)
 
   if (hasRoom && floor.room) {
     const room = floor.room
     for (let i = 0; i < room.length; i++) {
-      walls.push({ a: room[i], b: room[(i + 1) % room.length], h: WALL_H, fill: WALL_FILL, stroke: WALL_EDGE, kind: 'wall' })
+      walls.push({ a: room[i], b: room[(i + 1) % room.length], h: wallH, fill: WALL_FILL, stroke: WALL_EDGE, kind: 'wall' })
     }
   }
   for (const part of floor.partitions) {
+    const stl = partitionStyle(part)
     for (let i = 0; i + 1 < part.pts.length; i++) {
-      walls.push({ a: part.pts[i], b: part.pts[i + 1], h: PART_H, fill: PART_FILL, stroke: '#C4B394', kind: 'partition' })
+      walls.push({
+        a: part.pts[i],
+        b: part.pts[i + 1],
+        h: wallH,
+        fill: stl.fill,
+        stroke: stl.stroke,
+        kind: 'partition',
+        thick: partitionThickness(part),
+        alpha: stl.alpha,
+      })
     }
   }
 
