@@ -1,4 +1,4 @@
-import type { Dimension, Floor, LayerVis, MaterialSpec, OpeningSpec, PlannerDoc, PlannerObject, Partition, Pt, StairsSpec, Underlay } from './types'
+import type { CameraView, Dimension, Floor, LayerVis, MaterialSpec, OpeningSpec, PlannerDoc, PlannerObject, Partition, Pt, StairsSpec, Underlay } from './types'
 import { DEFAULT_LAYERS, DEFAULT_GRID_STEP, ENG_COLORS, MAX_FLOORS, emptyFloor, uid } from './types'
 
 /** Старая палитра инженерии (до цветового разделения по слоям) — при загрузке заменяется на цвет слоя */
@@ -148,6 +148,20 @@ function dimensionOf(v: unknown): Dimension | null {
   return a && b ? { id: str(v.id) ?? uid(), a, b } : null
 }
 
+function cameraViewOf(v: unknown): CameraView | null {
+  if (!isObj(v)) return null
+  const name = str(v.name)
+  if (!name) return null
+  const out: CameraView = { id: str(v.id) ?? uid(), name }
+  const desc = str(v.desc)
+  if (desc) out.desc = desc
+  return out
+}
+
+function viewsOf(v: unknown): CameraView[] {
+  return (Array.isArray(v) ? v : []).map(cameraViewOf).filter((x): x is CameraView => x !== null)
+}
+
 function underlayOf(v: unknown): Underlay | null {
   if (!isObj(v)) return null
   const src = str(v.src)
@@ -196,6 +210,11 @@ function floorOf(v: unknown, idx: number): Floor {
   if (ln) f.levelNotes = ln
   const rn = str(v.renderNotes)
   if (rn) f.renderNotes = rn
+  // освещение по зонам и ракурсы для рендера
+  const light = str(v.lightingNotes)
+  if (light) f.lightingNotes = light
+  const views = viewsOf(v.views)
+  if (views.length > 0) f.views = views
   return f
 }
 

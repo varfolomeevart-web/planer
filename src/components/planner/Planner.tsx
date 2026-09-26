@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Dimension, Floor, ObjLayer, PlannerDoc, PlannerObject, Pt, Underlay, View } from '@/lib/planner/types'
 import { MAX_FLOORS, currentFloor, emptyFloor, makeDoc, uid } from '@/lib/planner/types'
 import type { Preset } from '@/lib/planner/presets'
-import { isDoorWindowPreset } from '@/lib/planner/presets'
+import { defaultMaterialFor, isDoorWindowPreset } from '@/lib/planner/presets'
 import type { Tool } from '@/lib/planner/tools'
 import {
   distToSegment,
@@ -22,7 +22,8 @@ import {
 } from '@/lib/planner/geometry'
 import { computeUnderlayPlacement, fileToUnderlaySource, packDocForHistory, unpackDocFromHistory } from '@/lib/planner/underlay'
 import { drawScene } from '@/lib/planner/draw'
-import { exportJSON, exportPNG, exportPDF, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
+import { download, exportJSON, exportPNG, exportPDF, makeSaveFile, validateSaveFile } from '@/lib/planner/export'
+import { buildRenderBrief } from '@/lib/planner/brief'
 import { Catalog } from './Catalog'
 import { PropertiesPanel } from './PropertiesPanel'
 import { TopBar } from './TopBar'
@@ -474,10 +475,12 @@ export function Planner() {
       }
       if (preset.layer) obj.layer = preset.layer
       if (preset.showNext) obj.showNext = true
-      // спецификация для 3D-рендера: дефолты из пресета (высота, проём, лестница)
+      // спецификация для 3D-рендера: дефолты из пресета (высота, проём, лестница, материал)
       if (preset.heightCm) obj.heightCm = preset.heightCm
       if (preset.opening) obj.opening = { ...preset.opening }
       if (preset.stairs) obj.stairs = { ...preset.stairs }
+      const dm = defaultMaterialFor(preset)
+      if (dm) obj.material = dm
       pushHistory()
       withFloors((f) => ({ ...f, objects: [...f.objects, obj] }))
       selectedIdRef.current = obj.id
@@ -1576,6 +1579,21 @@ export function Planner() {
         onExportJSON={() => {
           exportJSON(docRef.current, showGridRef.current)
           toast.success('JSON-файл скачивается…')
+        }}
+        onCopyBrief={() => {
+          const text = buildRenderBrief(docRef.current)
+          const fallback = () => {
+            download(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'tz-3d-vizualizaciya.txt')
+            toast.success('Буфер недоступен — ТЗ скачано файлом .txt')
+          }
+          if (navigator.clipboard?.writeText) {
+            navigator.clipboard
+              .writeText(text)
+              .then(() => toast.success('ТЗ скопировано в буфер — вставьте в письмо или чат'))
+              .catch(fallback)
+          } else {
+            fallback()
+          }
         }}
         onOpen3d={() => {
           if (!fl.room && fl.objects.length === 0) {

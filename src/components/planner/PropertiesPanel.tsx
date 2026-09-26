@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Dimension, Floor, MaterialKind, MaterialSpec, OpeningSpec, Partition, PlannerDoc, PlannerObject, StairsSpec, Underlay } from '@/lib/planner/types'
-import { DEFAULT_CEILING_H, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS } from '@/lib/planner/types'
+import type { CameraView, Dimension, Floor, MaterialKind, MaterialSpec, OpeningSpec, Partition, PlannerDoc, PlannerObject, StairsSpec, Underlay } from '@/lib/planner/types'
+import { DEFAULT_CEILING_H, DOOR_OPEN_TYPES, ENG_COLORS, GRID_STEPS, LIGHT_PRESETS, MATERIAL_KINDS, OBJECT_COLORS, STAIRS_ASCENTS, STAIRS_KINDS, VIEW_PRESETS, uid } from '@/lib/planner/types'
 import { ENG_GROUPS, getPreset } from '@/lib/planner/presets'
 import { isStairs } from '@/lib/planner/floors'
 import { polygonArea, polygonPerimeter } from '@/lib/planner/geometry'
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace, FlipHorizontal, Ruler } from 'lucide-react'
+import { Copy, Trash2, RotateCcw, RotateCw, Eraser, ImagePlus, Maximize2, Replace, FlipHorizontal, Ruler, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Props {
@@ -105,7 +105,7 @@ function NumberField({
   )
 }
 
-/** Строка «материал»: тип + уточнение (для этажа и объекта) */
+/** Строка «материал»: тип + уточнение + цвет HEX (для этажа и объекта) */
 function MaterialRow({
   value,
   onChange,
@@ -141,8 +141,36 @@ function MaterialRow({
         disabled={!value?.kind}
         onFocus={onCommit}
         onChange={(e) => value?.kind && onChange({ ...value, desc: e.target.value || undefined })}
-        className="h-8 flex-1 border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+        className="h-8 min-w-0 flex-1 border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
       />
+      <div className="relative shrink-0">
+        <label
+          className="block h-8 w-8 cursor-pointer overflow-hidden rounded-md border border-[#E4DAC8]"
+          style={value?.color ? { backgroundColor: value.color } : undefined}
+          title={value?.color ? `Цвет ${value.color.toUpperCase()}` : 'Цвет (HEX) — не задан'}
+        >
+          <input
+            type="color"
+            value={value?.color ?? '#E0E0E0'}
+            onFocus={onCommit}
+            onChange={(e) => value?.kind && onChange({ ...value, color: e.target.value })}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          />
+          {!value?.color && (
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#F7F1E6] text-[9px] font-bold text-[#B0A390]">HEX</span>
+          )}
+        </label>
+        {value?.color && (
+          <button
+            type="button"
+            onClick={() => onChange({ ...value, color: undefined })}
+            className="absolute -top-1.5 -right-1.5 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#8B7D6B] text-[9px] leading-none text-white hover:bg-[#B3401E]"
+            title="Убрать цвет"
+          >
+            ×
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -291,8 +319,109 @@ export function PropertiesPanel({
               className="min-h-[56px] border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
             />
           </div>
+          <div>
+            <Label htmlFor="fl-light" className="mb-1 block text-[11px] font-semibold text-[#6B5D4F]">
+              Освещение по зонам
+            </Label>
+            <Textarea
+              id="fl-light"
+              value={floor.lightingNotes ?? ''}
+              placeholder={'напр.:\nКухня — яркие LED-панели (нейтральный свет)\nБар — подвесные светильники (лофт, тёплый свет)'}
+              onFocus={onCommit}
+              onChange={(e) => onUpdateFloor({ lightingNotes: e.target.value })}
+              className="min-h-[64px] border-[#E4DAC8] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+            />
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {LIGHT_PRESETS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    onCommit()
+                    const cur = (floor.lightingNotes ?? '').trim()
+                    onUpdateFloor({ lightingNotes: cur ? `${cur}\n${s}` : s })
+                  }}
+                  className="rounded-full bg-[#F7F1E6] px-2 py-0.5 text-[10px] font-medium text-[#6B5D4F] hover:bg-[#EFE3CC]"
+                  title="Добавить строку в описание"
+                >
+                  + {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <Label className="text-[11px] font-semibold text-[#6B5D4F]">Ракурсы для рендера</Label>
+              <button
+                type="button"
+                onClick={() => {
+                  onCommit()
+                  const v: CameraView = { id: uid(), name: '' }
+                  onUpdateFloor({ views: [...(floor.views ?? []), v] })
+                }}
+                className="flex items-center gap-0.5 text-[11px] font-semibold text-[#B3401E] hover:underline"
+              >
+                <Plus className="h-3 w-3" /> Добавить
+              </button>
+            </div>
+            {(floor.views ?? []).length === 0 && (
+              <p className="mb-1.5 text-[10px] leading-relaxed text-[#8B7D6B]">
+                Добавьте 2–3 приоритетные точки обзора — попадут в ТЗ («Изометрия сверху», «Вид от входа на бар»…).
+              </p>
+            )}
+            <div className="space-y-1.5">
+              {(floor.views ?? []).map((v, i) => (
+                <div key={v.id} className="space-y-1 rounded-lg border border-[#EAE2D5] bg-white p-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-[#8B7D6B]">#{i + 1}</span>
+                    <Input
+                      value={v.name}
+                      placeholder="напр.: Вид от входа на барную стойку"
+                      onFocus={onCommit}
+                      onChange={(e) => onUpdateFloor({ views: (floor.views ?? []).map((x) => (x.id === v.id ? { ...x, name: e.target.value } : x)) })}
+                      className="h-7 border-[#EAE2D5] bg-white text-xs focus-visible:ring-[#E8730C]/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCommit()
+                        onUpdateFloor({ views: (floor.views ?? []).filter((x) => x.id !== v.id) })
+                      }}
+                      className="shrink-0 text-[#B0A390] hover:text-[#B3401E]"
+                      title="Удалить ракурс"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <Input
+                    value={v.desc ?? ''}
+                    placeholder="уточнение: высота камеры, что в кадре (необязательно)"
+                    onFocus={onCommit}
+                    onChange={(e) => onUpdateFloor({ views: (floor.views ?? []).map((x) => (x.id === v.id ? { ...x, desc: e.target.value || undefined } : x)) })}
+                    className="h-7 border-[#EAE2D5] bg-white text-[11px] focus-visible:ring-[#E8730C]/40"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {VIEW_PRESETS.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() => {
+                    onCommit()
+                    onUpdateFloor({ views: [...(floor.views ?? []), { id: uid(), name: p.name, desc: p.desc }] })
+                  }}
+                  className="rounded-full bg-[#F7F1E6] px-2 py-0.5 text-[10px] font-medium text-[#6B5D4F] hover:bg-[#EFE3CC]"
+                  title="Добавить ракурс"
+                >
+                  + {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
           <p className="text-[10px] leading-relaxed text-[#8B7D6B]">
-            Эти данные попадают в экспорт JSON (и текстовый бриф для 3D-визуализатора).
+            Эти данные попадают в экспорт JSON, текстовый бриф для 3D-визуализатора (кнопка «ТЗ») и разделы «МАТЕРИАЛЫ», «ОСВЕЩЕНИЕ», «РАКУРСЫ».
           </p>
         </div>
       </div>

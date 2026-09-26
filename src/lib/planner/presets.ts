@@ -1,4 +1,4 @@
-import { ENG_COLORS, type ObjLayer, type OpeningSpec, type StairsSpec } from './types'
+import { ENG_COLORS, type MaterialSpec, type ObjLayer, type OpeningSpec, type StairsSpec } from './types'
 import { KLEN_PRESETS } from './klen-presets'
 
 export interface Preset {
@@ -129,4 +129,27 @@ export const ENG_GROUPS: { layer: Exclude<ObjLayer, 'furniture'>; name: string }
 /** Двери и окна привязываются к стенам */
 export function isDoorWindowPreset(presetId: string): boolean {
   return presetId.startsWith('door') || presetId.startsWith('window')
+}
+
+/** Материал по умолчанию для профессионального оборудования — матовая нержавейка */
+const STAINLESS: MaterialSpec = { kind: 'metal', desc: 'нержавеющая сталь матовая' }
+
+/** Дефолтные материалы корпуса для типового оборудования (id пресетов) */
+const DEFAULT_MATERIALS: Record<string, MaterialSpec> = {
+  fridge: { kind: 'metal', desc: 'нержавеющая сталь матовая' },
+  stove: { kind: 'metal', desc: 'эмаль, чёрная фурнитура' },
+  dishwasher: STAINLESS,
+  coffee_machine: STAINLESS,
+  display_fridge: { kind: 'glass', desc: 'стекло витрины, корпус — нержавеющая сталь' },
+  sink_cab: STAINLESS,
+  hood: STAINLESS,
+}
+
+/**
+ * Материал корпуса по умолчанию для объекта из пресета.
+ * Всё оборудование каталога «Клён» (HICOLD, POLAIR, Hurakan, Indokor, Luxstahl…) — матовая нержавейка.
+ */
+export function defaultMaterialFor(preset: Preset): MaterialSpec | undefined {
+  if (preset.category === 'klen') return { ...STAINLESS }
+  return DEFAULT_MATERIALS[preset.id] ? { ...DEFAULT_MATERIALS[preset.id] } : undefined
 }

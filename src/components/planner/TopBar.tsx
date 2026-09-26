@@ -23,6 +23,7 @@ import {
 import {
   Box,
   BrickWall,
+  ClipboardList,
   CopyPlus,
   Eraser,
   FilePlus2,
@@ -72,6 +73,7 @@ interface Props {
   onExportPNG: () => void
   onExportPDF: () => void
   onExportJSON: () => void
+  onCopyBrief: () => void
   onOpen3d: () => void
   floors: Floor[]
   currentFloorId: string
@@ -111,6 +113,7 @@ export function TopBar({
   onExportPNG,
   onExportPDF,
   onExportJSON,
+  onCopyBrief,
   onOpen3d,
   floors,
   currentFloorId,
@@ -301,6 +304,12 @@ export function TopBar({
           <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onExportJSON}>
             <FileDown className="mr-1 h-3.5 w-3.5" />
             <span className="hidden md:inline">JSON</span>
+          </Button>
+        </Tip>
+        <Tip label="ТЗ для 3D" hint="скопировать текстовое техзадание (материалы, освещение, ракурсы) в буфер">
+          <Button variant="outline" size="sm" className="h-8 border-[#E4DAC8] bg-white text-xs text-[#6B5D4F] hover:bg-[#F7F1E6]" onClick={onCopyBrief}>
+            <ClipboardList className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden md:inline">ТЗ</span>
           </Button>
         </Tip>
         <Tip label="PDF" hint="скачать план в PDF · все этажи — по страницам">
