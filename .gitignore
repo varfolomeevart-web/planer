@@ -61,3 +61,6 @@ download/planer-cursor-migration-*.md
 download/planer-cursor-migration-*.zip
 RESTORE-INFO.txt
 .wl-backup
+
+# Локальные копии бандла миграции для скачивания через превью (не коммитить)
+public/planer-cursor-migration-*
