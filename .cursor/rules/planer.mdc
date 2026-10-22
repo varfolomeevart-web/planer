@@ -1,0 +1,37 @@
+---
+description: Планировщик помещения (room-planner-ru) — обязательные правила проекта
+alwaysApply: true
+---
+
+# Планировщик помещения (room-planner-ru) — правила проекта для Cursor AI
+
+## Общение
+- Всегда отвечай по-русски, лаконично и по делу.
+
+## Стек и архитектура (не менять без явной необходимости)
+- Next.js 16 (App Router), TypeScript strict, Tailwind 4, shadcn/ui, Canvas 2D. Пакетный менеджер — bun.
+- Приложение ТОЛЬКО клиентское: static export (next.config.ts → output: 'export'). Никаких серверных ручек, БД, SSR-фич и next/auth.
+- Данные — localStorage 'room-planner-v1'. SaveFile version 3: { version, doc: { floors[], currentFloorId, gridStep, layers }, showGrid, brief }. Экспорт/импорт — src/lib/planner/export.ts; миграция старых сохранений — src/lib/planner/migrate.ts (обратная совместимость обязательна, схема меняется только аддитивно).
+- План — Canvas 2D: src/lib/planner/draw.ts. 3D — аксонометрия src/lib/planner/view3d.ts; экспорт координатной GLB-модели — src/lib/planner/gltf.ts (glTF 2.0 binary пишется вручную, без three.js; метры: X=x/100, Z=y/100, Y=высота/100).
+- Автосохранение: Planner.tsx пишет doc в localStorage на каждое изменение; история undo/redo с токенизацией data URL (underlay.ts).
+
+## Ключевые инварианты
+- ТЗ для 3D-визуализатора генерирует buildRenderBrief (src/lib/planner/brief.ts). Формат строк менять нельзя — на него завязан check-brief.ts и процесс пользователя. Координаты в см, (0;0) — левый верхний угол, ось Y вниз. Разделы: стены помещения → перегородки → потолок → проёмы → мебель → МАТЕРИАЛЫ И ТЕКСТУРЫ → ОСВЕЩЕНИЕ → РАКУРСЫ.
+- Перегородка: { id, pts, thicknessCm (2–100, дефолт 10), material }. Поля не удалять, только добавлять.
+- Высота стен и перегородок в 3D = ceilingHeightCm этажа.
+- Цены « · NN ₽» из названий Klen срезаются в ТЗ (cleanName).
+- Русские склонения числительных — plural(n, ['узел','узла','узлов']).
+- Любая правка схемы данных или брифа сопровождается обновлением проверок: scripts/check-brief.ts (28 PASS) и scripts/check-gltf.ts (22 PASS) — должны проходить полностью.
+- Перед коммитом: npx tsc --noEmit и npx eslint src — без ошибок.
+
+## Деплой
+- Сборка: BUNDLER=webpack ./scripts/build-static-export.sh → out/
+- Деплой: npx surge ./out https://room-planner-ru.surge.sh (нужен surge-аккаунт: npx surge login; исторический скрипт scripts/surge-deploy.py утрачен при чистке контейнера)
+- Push в GitHub: bash scripts/push-github.sh — токен из .env (GITHUB_TOKEN/GITHUB_USER/GITHUB_REPO), в URL не сохраняется
+- Значимые изменения фиксируются тегом vX.Y + GitHub Release (repo: varfolomeevart-web/planer).
+
+## Безопасность и прочее
+- Секреты не коммитить: они живут в gitignored файлах (.env, RESTORE-INFO.txt, download/*.zip).
+- Тестовые сиды сцены — scripts/seed*.js / seed*.py (загружаются в localStorage через браузер).
+- Комментарии в коде — по-русски, лаконично; UI-тексты — по-русски.
+- Директории skills/ и .zscripts/ — внутренности чужой платформы, их не трогать и не использовать.

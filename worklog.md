@@ -697,3 +697,23 @@ Stage Summary:
 - GitHub-доступ восстановлен на новом токене (чтение + запись + API проверены)
 - История выпрямлена: дубликат autocommitter'а вытеснен, main и тег v1.8 указывают на dd709b8 (точное состояние задеплоенной v1.8), Release не пострадал
 - Репозиторий полностью синхронизирован с live; рабочее дерево чистое
+
+---
+Task ID: 12
+Agent: main (Super Z)
+Task: «собери файл со всеми файлами и данными для миграции в cursor» — комплект миграции проекта в Cursor
+
+Work Log:
+- Инвентарь: 1358 трекед-файлов (из них 1075 — skills/ и .zscripts/, внутренности платформы Z-ai — к приложению не относятся); приложение — src/ 83 файла 16k строк; секреты — scripts/surge-deploy.py (surge-токен) и PAT в remote URL
+- Созданы правила для Cursor AI: .cursorrules + современный формат .cursor/rules/planer.mdc (alwaysApply) — стек, архитектура static-export, модель данных v3, инварианты ТЗ/брифа, чек-скрипты, деплой, запрет секретов
+- scripts/build-cursor-bundle.py (новый): собирает в download/ два артефакта — единый MD-бандл (контекст проекта + инструкция миграции + карта файлов + ВСЕ текстовые исходники с языковыми фенсами + worklog как приложение; бинарные/тяжёлые отфильтрованы: >450 КБ, null-byte, лок-файл) и ZIP-снапшот (все трекед-файлы без skills/.zscripts/download/*.zip/db/custom.db + surge-deploy.py + .env + .cursorrules/.cursor + RESTORE-INFO.txt с GitHub PAT)
+- PAT передаётся только через env GITHUB_PAT → попадает исключительно в gitignored RESTORE-INFO.txt внутри zip (в репо, MD и логах его нет)
+- .gitignore дополнен download/planer-cursor-migration-*.md|zip
+- Верификация: целостность zip, число файлов в MD против списка, PASS check-brief/check-gltf не затронуты (код приложения не менялся)
+- Обнаружено: scripts/surge-deploy.py (gitignored, с surge-токеном) утрачен из контейнера — в git-истории/чекпоинтах не восстановим; задокументирован прямой деплой `npx surge ./out …` и push через существующий scripts/push-github.sh (токен из .env: GITHUB_TOKEN/GITHUB_USER/GITHUB_REPO, в URL не сохраняется); .cursorrules/.mdc/RESTORE-INFO обновлены соответственно
+- Итог сборки: ZIP 31.0 MB / 275 файлов (integrity OK; без skills/.zscripts/download/*.zip/db/custom.db; дубли .cursorrules устранены), MD 1.08 MB / 129 текстовых файлов ~18,6k строк; PAT — только в RESTORE-INFO.txt внутри zip (MD и репо чистые, проверено grep'ом)
+
+Stage Summary:
+- Комплект миграции в Cursor собран: download/planer-cursor-migration-v1.8.zip (полный снапшот + правила Cursor + RESTORE-INFO с PAT) и download/planer-cursor-migration-v1.8.md (единый файл со всеми исходниками и контекстом — можно отдать Cursor AI целиком)
+- В репо добавлены .cursorrules и .cursor/rules/planer.mdc — после распаковки/клона Cursor сразу соблюдает инварианты проекта
+- Код приложения не менялся; версия остаётся v1.8
