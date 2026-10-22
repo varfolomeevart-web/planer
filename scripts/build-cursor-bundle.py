@@ -168,9 +168,10 @@ Fine-grained PAT (обновлён 2026-10-19, права на repo planer):
 
 === 3. Сборка и деплой на surge ===
   BUNDLER=webpack ./scripts/build-static-export.sh     # соберёт out/
-  npx surge ./out https://room-planner-ru.surge.sh     # нужен surge-аккаунт (npx surge login)
-  # NB: исторический скрипт scripts/surge-deploy.py (с вшитым токеном) утрачен при чистке
-  # контейнера и в комплект не входит; при наличии своего SURGE_TOKEN можно восстановить
+  python3 scripts/surge-deploy.py                      # деплой на {LIVE}
+  # скрипт восстановлен в безопасной редакции: токен НЕ вшит, а читается из .env
+  # заполните в .env: SURGE_TOKEN=<npx surge token> и SURGE_EMAIL=<email аккаунта>
+  # (один раз: npx surge login → npx surge token)
 
 === 4. Push в GitHub из локальной копии ===
 Вариант А (проще): добавить в .env три строки и выполнить скрипт:
@@ -229,7 +230,7 @@ Fine-grained PAT (обновлён 2026-10-19, права на repo planer):
 2. **Открыть в Cursor:** File → Open Folder → `planer`. Файлы `.cursorrules` и `.cursor/rules/planer.mdc` подхватятся автоматически — Cursor AI будет соблюдать инварианты проекта (см. раздел 3).
 3. **Зависимости и запуск:** `bun install` (или `npm install`) → `bun run dev` → http://localhost:3000
 4. **Проверить себя:** `bun scripts/check-brief.ts` (28 PASS) и `bun scripts/check-gltf.ts` (22 PASS) должны проходить сразу после распаковки.
-5. **Деплой после правок:** `BUNDLER=webpack ./scripts/build-static-export.sh` → `npx surge ./out https://room-planner-ru.surge.sh` (нужен surge-аккаунт: `npx surge login`). Push в GitHub: `bash scripts/push-github.sh` (токен в `.env`).
+5. **Деплой после правок:** `BUNDLER=webpack ./scripts/build-static-export.sh` → `python3 scripts/surge-deploy.py` (токен в `.env`: `SURGE_TOKEN`/`SURGE_EMAIL`; получить: `npx surge login` → `npx surge token`). Push в GitHub: `bash scripts/push-github.sh` (токен в `.env`).
 
 ## 2. Контекст проекта
 

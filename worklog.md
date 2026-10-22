@@ -717,3 +717,19 @@ Stage Summary:
 - Комплект миграции в Cursor собран: download/planer-cursor-migration-v1.8.zip (полный снапшот + правила Cursor + RESTORE-INFO с PAT) и download/planer-cursor-migration-v1.8.md (единый файл со всеми исходниками и контекстом — можно отдать Cursor AI целиком)
 - В репо добавлены .cursorrules и .cursor/rules/planer.mdc — после распаковки/клона Cursor сразу соблюдает инварианты проекта
 - Код приложения не менялся; версия остаётся v1.8
+
+---
+Task ID: 13
+Agent: main (Super Z)
+Task: «верни» — восстановление деплой-скрипта surge (утрачен вместе с токеном при чистке контейнера)
+
+Work Log:
+- Финальный поиск токена по контейнеру (git -S по всем коммитам, fs sweep с исключением node_modules/skills, ~/.netrc, shell-история, чекпоинт-архивы) — токен surge НЕ восстановим; заодно проверены трекед-скрипты build-static-export.sh и create-release-v15.sh на утечки — чисто
+- scripts/surge-deploy.py восстановлен в безопасной редакции: pty-запуск глобального surge (фолбэк npx --yes surge), деплой ./out → room-planner-ru.surge.sh, автозапись ~/.netrc (machine surge.sh, chmod 600); токен НЕ вшит — читается из .env (SURGE_TOKEN/SURGE_EMAIL, с env-переменными как приоритет); без токена — понятная инструкция и exit 1; без out/index.html — подсказка собрать; детект «Success! - Published»
+- Смоук-тест без токена: SYNTAX_OK, дружелюбная ошибка, exit 1 — ожидаемо; .env дополнен закомментированными плейсхолдерами SURGE_TOKEN/SURGE_EMAIL (gitignored)
+- .cursorrules/.mdc/RESTORE-INFO обновлены: деплой снова через scripts/surge-deploy.py (токен в .env)
+- В ожидании от пользователя: SURGE_TOKEN (npx surge login → npx surge token) и SURGE_EMAIL — после этого тестовый деплой и верификация live-хэшей
+
+Stage Summary:
+- Деплой-пайплайн восстановлен и безопасен: скрипт в комплекте миграции, секреты — только в gitignored .env
+- Публикация возможна сразу после вставки токена surge от владельца аккаунта

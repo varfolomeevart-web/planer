@@ -21,7 +21,7 @@
 
 ## Деплой
 - Сборка: BUNDLER=webpack ./scripts/build-static-export.sh → out/
-- Деплой: npx surge ./out https://room-planner-ru.surge.sh (нужен surge-аккаунт: npx surge login; исторический скрипт scripts/surge-deploy.py утрачен при чистке контейнера)
+- Деплой: python3 scripts/surge-deploy.py → https://room-planner-ru.surge.sh (токен в .env: SURGE_TOKEN/SURGE_EMAIL; скрипт gitignored)
 - Push в GitHub: bash scripts/push-github.sh — токен из .env (GITHUB_TOKEN/GITHUB_USER/GITHUB_REPO), в URL не сохраняется
 - Значимые изменения фиксируются тегом vX.Y + GitHub Release (repo: varfolomeevart-web/planer).
 
