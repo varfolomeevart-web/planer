@@ -2,9 +2,16 @@
 # Сборка статического экспорта планировщика для внешнего хостинга (Surge.sh)
 # Временно подменяет next.config.ts и убирает API-роут, затем восстанавливает.
 set -e
-# Корень репозитория, а не фиксированный /home/z/my-project:
-# на сервере avinfra клон лежит в другом каталоге.
-cd "$(cd "$(dirname "$0")/.." && pwd)"
+# Деплой уже стоит в корне клона (bun install проходит до этой сборки).
+# Жёсткий /home/z/my-project на сервере avinfra отсутствует, а при source
+# из ~/deploy-planer.sh путь $0 указывает на домашний каталог, не на проект.
+if [ ! -f next.config.ts ]; then
+  cd "$(cd "$(dirname "$0")/.." && pwd)"
+fi
+if [ ! -f next.config.ts ]; then
+  echo "FAIL: next.config.ts не найден в $(pwd)"
+  exit 1
+fi
 
 export NEXT_TELEMETRY_DISABLED=1
 
