@@ -283,6 +283,52 @@ export function drawGlyph(ctx: CanvasRenderingContext2D, presetId: string, color
       ctx.lineWidth = lw2
       ctx.strokeRect(-hw + 8, -hh + 6, w - 16, 14)
       break
+    case 'desk_cluster4': {
+      // 2×2 лицом друг к другу: продольный экран и поперечные перегородки
+      base(Math.min(40, h * 0.28))
+      ctx.fillStyle = '#2E2E2E'
+      ctx.fillRect(-hw + 22, -2.2, w - 44, 4.4)
+      ctx.fillRect(-1.6, -hh + 16, 3.2, hh - 22)
+      ctx.fillRect(-1.6, 6, 3.2, hh - 22)
+      break
+    }
+    case 'desk_cluster3': {
+      // три места в ряд, экран по дальней кромке и две перегородки
+      base(Math.min(18, h * 0.25))
+      ctx.fillStyle = '#2E2E2E'
+      ctx.fillRect(-hw + 10, -hh + 1, w - 20, 3.5)
+      for (const x of [-w / 6, w / 6]) ctx.fillRect(x - 1.6, -hh + 4, 3.2, h * 0.55)
+      break
+    }
+    case 'desk_photo': {
+      // две пары со сдвигом на треть габарита: левая выше, правая ближе, правый торец скруглён
+      const x0 = -hw
+      const x1 = 0
+      const x2 = hw
+      const y0 = -hh
+      const y1 = -hh + h / 3
+      const y2 = -hh + (2 * h) / 3
+      const y3 = hh
+      const r = Math.min(22, Math.min(w, h) * 0.08)
+      const rEnd = Math.min(46, h / 5)
+      ctx.beginPath()
+      ctx.moveTo(x0 + r, y0)
+      ctx.arcTo(x1, y0, x1, y1, r)
+      ctx.arcTo(x1, y1, x2, y1, r)
+      ctx.arcTo(x2, y1, x2, y3, r)
+      ctx.arcTo(x2, y3, x1, y3, rEnd)
+      ctx.arcTo(x1, y3, x1, y2, r)
+      ctx.arcTo(x1, y2, x0, y2, r)
+      ctx.arcTo(x0, y2, x0, y0, r)
+      ctx.arcTo(x0, y0, x1, y0, r)
+      ctx.closePath()
+      ctx.fill()
+      ctx.stroke()
+      ctx.fillStyle = '#2E2E2E'
+      ctx.fillRect(x0 + 12, y1 - 2, -x0 - 22, 4)
+      ctx.fillRect(10, y2 - 2, x2 - 26, 4)
+      break
+    }
     case 'kitchen_set': {
       base(2)
       ctx.lineWidth = lw2

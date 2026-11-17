@@ -50,6 +50,7 @@ export function partitionStyle(p: Partition): { fill: string; stroke: string; al
 const PRESET_H: Record<string, number> = {
   sofa: 75, armchair: 80, coffee_table: 45, tv_stand: 50, bookshelf: 180, rug: 3,
   bed_double: 60, bed_single: 60, nightstand: 50, wardrobe: 220, dresser: 85, desk: 75,
+  desk_cluster4: 75, desk_cluster3: 75, desk_photo: 75,
   kitchen_set: 90, dining_table: 75, chair: 85, fridge: 200, stove: 85, sink_cab: 85,
   cafe_table2: 75, cafe_table4: 75, bar_counter: 110, coffee_machine: 40, cashbox: 90,
   display_fridge: 180, dishwasher: 85,
@@ -361,6 +362,58 @@ export function objectParts(o: PlannerObject): Part[] {
         parts.push(box(rect(-hw + 12, -hh + 12, hw - 12, -hh + 40), 50, 62, { color: '#FCFAF3' }))
       }
       parts.push(box(rect(-hw + 3, -hh + 52, hw - 3, hh - 2), 20, 55, { color: shade(color, 0.85) }))
+      break
+    }
+    case 'desk_photo': {
+      // две пары 140×70 со сдвигом: левая занимает верхние 2/3, правая — нижние 2/3
+      const top = 4
+      const deskH = 75
+      const leg = 5
+      const frame = '#2A2A2A'
+      const screen = '#3A3A3A'
+      const y1 = -hh + d / 3
+      const y2 = -hh + (2 * d) / 3
+      const putLeg = (lx: number, ly: number) =>
+        parts.push(box(rect(lx, ly, lx + leg, ly + leg), 0, deskH - top, { color: frame }))
+      putLeg(-hw + 14, -hh + 10)
+      putLeg(-14 - leg, -hh + 10)
+      putLeg(-hw + 14, y2 - 10 - leg)
+      putLeg(-14 - leg, y2 - 10 - leg)
+      putLeg(14, y1 + 10)
+      putLeg(hw - 14 - leg, y1 + 10)
+      putLeg(14, hh - 10 - leg)
+      putLeg(hw - 14 - leg, hh - 10 - leg)
+      parts.push(box(rect(-hw, -hh, 0, y2), deskH - top, deskH))
+      parts.push(box(rect(0, y1, hw, hh), deskH - top, deskH))
+      parts.push(box(rect(-hw + 12, y1 - 1.5, -8, y1 + 1.5), deskH, 115, { color: screen }))
+      parts.push(box(rect(8, y2 - 1.5, hw - 18, y2 + 1.5), deskH, 115, { color: screen }))
+      break
+    }
+    case 'desk_cluster4':
+    case 'desk_cluster3': {
+      // столешница 75 см, экраны выше неё; ножки — чёрный каркас
+      const top = 4
+      const deskH = 75
+      const leg = 5
+      const frame = '#2A2A2A'
+      const screen = '#3A3A3A'
+      const four = o.presetId === 'desk_cluster4'
+      const legX = four ? [-hw + 16, -8, hw - 16 - leg] : [-hw + 16, -w / 6, w / 6, hw - 16 - leg]
+      const legY = [-hh + 10, hh - 10 - leg]
+      for (const lx of legX) {
+        for (const ly of legY) parts.push(box(rect(lx, ly, lx + leg, ly + leg), 0, deskH - top, { color: frame }))
+      }
+      parts.push(box(rect(-hw, -hh, hw, hh), deskH - top, deskH))
+      if (four) {
+        parts.push(box(rect(-hw + 18, -1.5, hw - 18, 1.5), deskH, 115, { color: screen }))
+        parts.push(box(rect(-1.5, -hh + 14, 1.5, -5), deskH, 108, { color: screen }))
+        parts.push(box(rect(-1.5, 5, 1.5, hh - 14), deskH, 108, { color: screen }))
+      } else {
+        parts.push(box(rect(-hw + 8, -hh, hw - 8, -hh + 3), deskH, 115, { color: screen }))
+        for (const x of [-w / 6, w / 6]) {
+          parts.push(box(rect(x - 1.5, -hh + 3, x + 1.5, -hh + 3 + d * 0.55), deskH, 108, { color: screen }))
+        }
+      }
       break
     }
     case 'dining_table':

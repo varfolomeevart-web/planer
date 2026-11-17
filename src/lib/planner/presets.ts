@@ -15,6 +15,8 @@ export interface Preset {
   showNext?: boolean
   /** картинка-схема вместо векторного глифа (раздел «Клён») */
   img?: string
+  /** фото только в карточке каталога; на плане остаётся чертёж */
+  cardImg?: string
   /** высота по умолчанию, см (для спецификации рендера) */
   heightCm?: number
   /** дефолтная спецификация проёма (двери/окна) */
@@ -33,6 +35,7 @@ export const CATEGORIES = [
   { id: 'stairs', name: 'Лестницы' },
   { id: 'doors', name: 'Двери' },
   { id: 'windows', name: 'Окна' },
+  { id: 'office', name: 'Офис' },
   { id: 'eng', name: 'Инженерия' },
   { id: 'misc', name: 'Разное' },
 ] as const
@@ -77,6 +80,12 @@ export const PRESETS: Preset[] = [
   // Окна
   { id: 'window_120', name: 'Окно 120 см', category: 'windows', w: 120, h: 14, color: '#D7E5EC', heightCm: 150, opening: { sillCm: 90 } },
   { id: 'window_180', name: 'Окно 180 см', category: 'windows', w: 180, h: 14, color: '#D7E5EC', heightCm: 150, opening: { sillCm: 90 } },
+  // Офис: модуль одного места 140×70 см (плитка 60×60 на фото, тумба ~40 см).
+  // Кластер — два ряда лицом друг к другу; «на 3 места» — тот же модуль в один ряд.
+  { id: 'desk_cluster4', name: 'Кластер на 4 места', category: 'office', w: 280, h: 140, color: '#F4F1EC', heightCm: 75 },
+  { id: 'desk_cluster3', name: 'Стол на 3 места', category: 'office', w: 420, h: 70, color: '#F4F1EC', heightCm: 75 },
+  // Две пары 140×70 со сдвигом на одну глубину: левая выше, правая ближе, торец скруглён.
+  { id: 'desk_photo', name: 'Как на фото', category: 'office', w: 280, h: 210, color: '#F4F1EC', heightCm: 75, cardImg: '/catalog/desk-cluster-photo.jpg' },
   // Инженерия: вентиляция — серый
   { id: 'hood', name: 'Вытяжка', category: 'eng', w: 60, h: 60, color: ENG_COLORS.vent.fill, layer: 'vent' },
   { id: 'vent_channel', name: 'Вентканал', category: 'eng', w: 40, h: 40, color: ENG_COLORS.vent.fill, layer: 'vent' },
@@ -143,6 +152,9 @@ const DEFAULT_MATERIALS: Record<string, MaterialSpec> = {
   display_fridge: { kind: 'glass', desc: 'стекло витрины, корпус — нержавеющая сталь' },
   sink_cab: STAINLESS,
   hood: STAINLESS,
+  desk_cluster4: { kind: 'laminate', desc: 'белая столешница, чёрный металлокаркас и экраны' },
+  desk_cluster3: { kind: 'laminate', desc: 'белая столешница, чёрный металлокаркас и экраны' },
+  desk_photo: { kind: 'laminate', desc: 'белая столешница со сдвигом двух пар, чёрный металлокаркас и экраны' },
 }
 
 /**

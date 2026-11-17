@@ -31,9 +31,9 @@ export function Catalog({ placePreset, onPlace }: Props) {
         style={frame && !active ? { borderColor: `${frame}55` } : undefined}
         title={`Добавить: ${p.name} (${p.w}×${p.h} см)`}
       >
-        {p.img ? (
+        {p.cardImg || p.img ? (
           <img
-            src={p.img}
+            src={p.cardImg || p.img}
             alt=""
             draggable={false}
             className="shrink-0 rounded-md object-contain"
