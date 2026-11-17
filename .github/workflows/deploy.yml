@@ -27,4 +27,8 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/id_ed25519 "$DEPLOY_USER@$DEPLOY_HOST" '~/deploy-planer.sh'
+          # Серверный main разошёлся с origin после переписывания истории,
+          # и ~/deploy-planer.sh падает на git pull --ff-only (код 128).
+          # Сброс на origin/main не трогает неотслеживаемые файлы (.env, out/).
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd /home/z/my-project && echo "HEAD до сброса: $(git rev-parse --short HEAD)" && git fetch origin main && git reset --hard origin/main && echo "HEAD после сброса: $(git rev-parse --short HEAD)" && ~/deploy-planer.sh'
