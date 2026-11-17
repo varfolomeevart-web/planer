@@ -29,6 +29,58 @@ jobs:
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           # Серверный main разошёлся с origin после переписывания истории,
           # и ~/deploy-planer.sh падает на git pull --ff-only (код 128).
-          # Сброс на origin/main не трогает неотслеживаемые файлы (.env, out/).
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
-            'cd /home/z/my-project && echo "HEAD до сброса: $(git rev-parse --short HEAD)" && git fetch origin main && git reset --hard origin/main && echo "HEAD после сброса: $(git rev-parse --short HEAD)" && ~/deploy-planer.sh'
+          # Каталог клона берём из самого скрипта: /home/z/my-project на сервере нет.
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' << 'REMOTE'
+          set -eu
+          script="$HOME/deploy-planer.sh"
+          repo=""
+          expand_path() {
+            p="$1"
+            p="${p%\"}"
+            p="${p#\"}"
+            p="${p%\'}"
+            p="${p#\'}"
+            case "$p" in
+              "~/"*) p="$HOME/${p:2}" ;;
+              "~") p="$HOME" ;;
+            esac
+            printf '%s' "$p"
+          }
+          while IFS= read -r line || [ -n "$line" ]; do
+            p=""
+            case "$line" in
+              *git\ -C*)
+                p=$(printf '%s\n' "$line" | sed -n 's/.*git[[:space:]]\+-C[[:space:]]\+\([^;&[:space:]]*\).*/\1/p')
+                ;;
+              *cd\ *)
+                p=$(printf '%s\n' "$line" | sed -n 's/.*cd[[:space:]]\+\([^;&]*\).*/\1/p')
+                p=$(printf '%s' "$p" | sed 's/[[:space:]]*$//')
+                ;;
+            esac
+            [ -z "$p" ] && continue
+            p=$(expand_path "$p")
+            if [ -e "$p/.git" ]; then repo="$p"; break; fi
+          done < "$script"
+          if [ -z "$repo" ]; then
+            while IFS= read -r g; do
+              d=$(dirname "$g")
+              if [ -f "$d/scripts/build-static-export.sh" ] || [ -f "$d/next.config.ts" ]; then
+                repo="$d"
+                break
+              fi
+            done < <(find "$HOME" /var/www /opt /srv /home -maxdepth 5 -name .git -type d 2>/dev/null)
+          fi
+          if [ -z "$repo" ]; then
+            echo "Не нашёл клон планировщика"
+            grep -nE "cd |git " "$script" | head -30 || true
+            find "$HOME" /var/www /opt /srv /home -maxdepth 4 -name .git -type d 2>/dev/null | head -20 || true
+            exit 1
+          fi
+          cd "$repo"
+          echo "Репозиторий: $repo"
+          echo "HEAD до сброса: $(git rev-parse --short HEAD)"
+          git fetch origin main
+          git reset --hard origin/main
+          echo "HEAD после сброса: $(git rev-parse --short HEAD)"
+          "$script"
+          REMOTE

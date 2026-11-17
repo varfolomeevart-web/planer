@@ -2,7 +2,9 @@
 # Сборка статического экспорта планировщика для внешнего хостинга (Surge.sh)
 # Временно подменяет next.config.ts и убирает API-роут, затем восстанавливает.
 set -e
-cd /home/z/my-project
+# Корень репозитория, а не фиксированный /home/z/my-project:
+# на сервере avinfra клон лежит в другом каталоге.
+cd "$(cd "$(dirname "$0")/.." && pwd)"
 
 export NEXT_TELEMETRY_DISABLED=1
 
